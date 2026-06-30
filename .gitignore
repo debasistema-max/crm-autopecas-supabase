@@ -1,0 +1,32 @@
+# Dependencies and local caches
+node_modules/
+.pnpm-store/
+.cache/
+.codex/
+.agents/
+_xlsx_inspect/
+__pycache__/
+*.pyc
+
+# Local runtime and generated data
+*.log
+*.tmp
+*.zip
+*.xlsx
+supabase_import/*.csv
+
+# Legacy CRM sources kept out of the Supabase/GitHub app
+apps-script/
+crm-autopecas-ips/
+crm-autopecas-novo/
+DEPLOY_FIREBASE_APPS_SCRIPT.md
+app.js
+index.html
+styles.css
+assets/
+
+# Old Firebase artifacts
+.firebase/
+firebase.json
+.firebaserc
+firestore.rules

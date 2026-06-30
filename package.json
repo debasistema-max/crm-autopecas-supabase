@@ -1,0 +1,9 @@
+{
+  "scripts": {
+    "supabase:apply-schema": "node scripts/apply_supabase_schema.mjs",
+    "supabase:import": "node scripts/import_supabase_csv.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
+  }
+}
