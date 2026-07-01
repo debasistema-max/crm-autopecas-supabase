@@ -500,14 +500,19 @@ function renderImportPreview(plan) {
   const invalid = plan.invalidRows.length
     ? `<div class="import-warnings"><strong>${plan.invalidRows.length} linhas ignoradas</strong><span>${plan.invalidRows.slice(0, 5).map((row) => `Linha ${row.linha}: ${escapeHtml(row.motivo)}`).join(' | ')}</span></div>`
     : '';
+  const duplicates = plan.duplicates
+    ? `<div class="import-warnings"><strong>${plan.duplicates} codigos repetidos</strong><span>Quando o mesmo codigo aparece mais de uma vez, sera importada a ultima linha encontrada.</span></div>`
+    : '';
   return `
     <div class="import-summary">
       <article><span>Linhas</span><strong>${plan.totalRows}</strong></article>
       <article><span>Validas</span><strong>${plan.validRows}</strong></article>
+      <article><span>Unicos</span><strong>${plan.uniqueRows}</strong></article>
       <article><span>Novos</span><strong>${plan.newCount}</strong></article>
       <article><span>Atualizacoes</span><strong>${plan.existingCount}</strong></article>
       <article><span>Duplicados</span><strong>${plan.duplicates}</strong></article>
     </div>
+    ${duplicates}
     ${invalid}
     ${renderImportTable(plan.preview)}
   `;

@@ -154,7 +154,7 @@ async function supabaseSaveUser(payload) {
 
 async function supabaseImportProducts(payload) {
   const plan = await supabasePreviewImportProducts(payload);
-  const mapped = plan.products;
+  const mapped = plan.productsUnique;
 
   let novos = 0;
   let atualizados = 0;
@@ -211,6 +211,7 @@ async function supabasePreviewImportProducts(payload) {
   const duplicateCodes = new Set();
   const invalidRows = [];
   const products = [];
+  const byCode = new Map();
 
   rows.forEach((row, index) => {
     const product = mapImportProduct(row, tipo);
@@ -221,11 +222,13 @@ async function supabasePreviewImportProducts(payload) {
     if (seen.has(product.codigo)) duplicateCodes.add(product.codigo);
     seen.add(product.codigo);
     products.push(product);
+    byCode.set(product.codigo, product);
   });
 
   if (!products.length) throw new Error('Nenhum produto valido encontrado na importacao.');
 
-  const codes = products.map((product) => product.codigo);
+  const productsUnique = Array.from(byCode.values());
+  const codes = productsUnique.map((product) => product.codigo);
   let existingCount = 0;
   for (const chunk of chunkArray(codes, 500)) {
     const { data, error } = await supabaseClient
@@ -240,12 +243,14 @@ async function supabasePreviewImportProducts(payload) {
     tipo,
     totalRows: rows.length,
     validRows: products.length,
+    uniqueRows: productsUnique.length,
     invalidRows,
     duplicates: duplicateCodes.size,
     existingCount,
-    newCount: Math.max(products.length - existingCount, 0),
-    preview: products.slice(0, 8),
-    products
+    newCount: Math.max(productsUnique.length - existingCount, 0),
+    preview: productsUnique.slice(0, 8),
+    products,
+    productsUnique
   };
 }
 
