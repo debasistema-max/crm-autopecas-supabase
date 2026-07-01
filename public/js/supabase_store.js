@@ -101,6 +101,38 @@ async function supabaseGetLogs(filters) {
   return data || [];
 }
 
+async function supabaseListCadastrosClientes(filters = {}) {
+  let query = supabaseClient
+    .from('cadastros_clientes')
+    .select('id, protocolo, status, cnpj, razao_social, nome_fantasia, telefone, whatsapp, email_compras, cidade, estado, segmento, situacao_cadastral, cnae, possui_regime_especial, descricao_regime, observacoes, observacoes_internas, created_at')
+    .order('created_at', { ascending: false })
+    .limit(150);
+  if (filters.status) query = query.eq('status', filters.status);
+  if (filters.termo) {
+    const term = `%${filters.termo}%`;
+    query = query.or(`protocolo.ilike.${term},cnpj.ilike.${term},razao_social.ilike.${term},nome_fantasia.ilike.${term},cidade.ilike.${term}`);
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
+}
+
+async function supabaseUpdateCadastroCliente(payload) {
+  const updates = {
+    status: payload.status,
+    observacoes_internas: payload.observacoes_internas || null
+  };
+  const { data, error } = await supabaseClient
+    .from('cadastros_clientes')
+    .update(updates)
+    .eq('id', payload.id)
+    .select('id, protocolo, status, observacoes_internas')
+    .single();
+  if (error) throw error;
+  await supabaseLog('ATUALIZAR_CADASTRO_CLIENTE', 'cadastros_clientes', payload.id, updates);
+  return data;
+}
+
 async function supabaseListUsers() {
   const { data, error } = await supabaseClient
     .from('profiles')
@@ -154,80 +186,114 @@ async function supabaseSaveUser(payload) {
 
 async function supabaseImportProducts(payload) {
   const plan = await supabasePreviewImportProducts(payload);
-  const mapped = plan.productsUnique;
+  const mapped = plan.productsUnique.map(filterProductFields);
+  if (!mapped.length) throw new Error('Nenhum produto valido encontrado para importar.');
 
-  let novos = 0;
-  let atualizados = 0;
-  const codes = mapped.map((product) => product.codigo);
-  for (const chunk of chunkArray(codes, 500)) {
-    const { data, error } = await supabaseClient
-      .from('products')
-      .select('codigo')
-      .in('codigo', chunk);
-    if (error) throw error;
-    const existing = new Set((data || []).map((item) => item.codigo));
-    chunk.forEach((code) => {
-      if (existing.has(code)) atualizados += 1;
-      else novos += 1;
-    });
-  }
-
-  const chunks = chunkArray(mapped, 300);
-  for (let index = 0; index < chunks.length; index += 1) {
-    const { error } = await supabaseClient
-      .from('products')
-      .upsert(chunks[index], { onConflict: 'codigo' });
-    if (error) throw error;
-    if (typeof payload.onProgress === 'function') {
-      payload.onProgress({
-        done: Math.min((index + 1) * 300, mapped.length),
-        total: mapped.length
+  const session = getStoredSession() || {};
+  let batch = null;
+  try {
+    let novos = 0;
+    let atualizados = 0;
+    const codes = mapped.map((product) => product.codigo);
+    for (const chunk of chunkArray(codes, 500)) {
+      const { data, error } = await supabaseClient
+        .from('products')
+        .select('codigo')
+        .in('codigo', chunk);
+      if (error) throw error;
+      const existing = new Set((data || []).map((item) => item.codigo));
+      chunk.forEach((code) => {
+        if (existing.has(code)) atualizados += 1;
+        else novos += 1;
       });
     }
-  }
 
-  const batch = {
-    usuario: (getStoredSession() || {}).usuario || null,
-    tipo: plan.tipo,
-    total_recebido: plan.totalRows,
-    novos,
-    atualizados,
-    sem_alteracao: plan.duplicates,
-    erros: plan.invalidRows.length,
-    status: 'APLICADO'
-  };
-  await supabaseClient.from('import_batches').insert(batch);
-  await supabaseLog('IMPORTAR_PRODUTOS', 'products', plan.tipo, batch);
-  return { summary: batch, preview: plan.preview };
+    const chunks = chunkArray(mapped, 300);
+    for (let index = 0; index < chunks.length; index += 1) {
+      const { error } = await supabaseClient
+        .from('products')
+        .upsert(chunks[index], { onConflict: 'codigo', defaultToNull: false });
+      if (error) throw error;
+      if (typeof payload.onProgress === 'function') {
+        payload.onProgress({
+          done: Math.min((index + 1) * 300, mapped.length),
+          total: mapped.length,
+          batch: index + 1,
+          batches: chunks.length
+        });
+      }
+    }
+
+    batch = {
+      usuario: session.usuario || null,
+      tipo: plan.tipo,
+      total_recebido: plan.totalRows,
+      novos,
+      atualizados,
+      sem_alteracao: plan.duplicates,
+      erros: plan.invalidRows.length,
+      status: 'APLICADO'
+    };
+    await supabaseClient.from('import_batches').insert(batch);
+    await supabaseLog('IMPORTAR_PRODUTOS', 'products', plan.tipo, {
+      data_hora: new Date().toISOString(),
+      usuario: session.usuario || null,
+      nome_arquivo: payload.fileName || null,
+      linhas_validas: plan.validRows,
+      produtos_unicos: plan.uniqueRows,
+      codigos_duplicados: plan.duplicateCodes,
+      campos_atualizados: plan.fieldsUpdated,
+      status: 'sucesso',
+      resumo: batch
+    });
+    return { summary: batch, preview: plan.preview };
+  } catch (error) {
+    await supabaseLog('ERRO_IMPORTAR_PRODUTOS', 'products', plan.tipo, {
+      data_hora: new Date().toISOString(),
+      usuario: session.usuario || null,
+      nome_arquivo: payload.fileName || null,
+      total_linhas: plan.totalRows,
+      linhas_validas: plan.validRows,
+      produtos_unicos: plan.uniqueRows,
+      duplicados: plan.duplicates,
+      invalidos: plan.invalidRows.length,
+      status: 'erro',
+      mensagem_erro: error.message
+    });
+    throw error;
+  }
 }
 
 async function supabasePreviewImportProducts(payload) {
-  const tipo = payload.tipo || 'CATALOGO_PESQUISA';
+  const tipo = normalizeImportType(payload.tipo);
   const table = parseDelimitedTable(payload.texto || '');
   const rows = applyImportMapping(table.rows, payload.mapping);
   if (!rows.length) throw new Error('Cole ou selecione um CSV/TSV com cabecalho.');
 
-  const seen = new Set();
-  const duplicateCodes = new Set();
   const invalidRows = [];
   const products = [];
-  const byCode = new Map();
 
   rows.forEach((row, index) => {
-    const product = mapImportProduct(row, tipo);
+    const product = filterProductFields(mapImportProduct(row, tipo));
     if (!product.codigo) {
       invalidRows.push({ linha: index + 2, motivo: 'Codigo ausente' });
       return;
     }
-    if (seen.has(product.codigo)) duplicateCodes.add(product.codigo);
-    seen.add(product.codigo);
+    if (tipo === 'PRECO_SP' && product.preco_sp == null) {
+      invalidRows.push({ linha: index + 2, motivo: 'Preco SP ausente ou invalido' });
+      return;
+    }
+    if (tipo === 'PRECO_PR' && product.preco_pr == null) {
+      invalidRows.push({ linha: index + 2, motivo: 'Preco PR ausente ou invalido' });
+      return;
+    }
     products.push(product);
-    byCode.set(product.codigo, product);
   });
 
   if (!products.length) throw new Error('Nenhum produto valido encontrado na importacao.');
 
-  const productsUnique = Array.from(byCode.values());
+  const consolidated = consolidateImportProducts(products);
+  const productsUnique = consolidated.productsUnique;
   const codes = productsUnique.map((product) => product.codigo);
   let existingCount = 0;
   for (const chunk of chunkArray(codes, 500)) {
@@ -241,11 +307,13 @@ async function supabasePreviewImportProducts(payload) {
 
   return {
     tipo,
+    fieldsUpdated: getImportUpdatedFields(tipo),
     totalRows: rows.length,
     validRows: products.length,
     uniqueRows: productsUnique.length,
     invalidRows,
-    duplicates: duplicateCodes.size,
+    duplicateCodes: consolidated.duplicateCodes,
+    duplicates: consolidated.duplicateCodes.length,
     existingCount,
     newCount: Math.max(productsUnique.length - existingCount, 0),
     preview: productsUnique.slice(0, 8),
@@ -255,12 +323,35 @@ async function supabasePreviewImportProducts(payload) {
 }
 
 function getImportColumnPlan(text, tipo) {
+  const normalizedType = normalizeImportType(tipo);
   const table = parseDelimitedTable(text || '');
   return {
     headers: table.headers,
     sampleRows: table.rows.slice(0, 3),
-    mapping: Object.fromEntries(table.headers.map((header) => [header, suggestImportField(header, tipo)]))
+    mapping: Object.fromEntries(table.headers.map((header) => [header, suggestImportField(header, normalizedType)]))
   };
+}
+
+function getImportAutoAnalysis(text, currentType) {
+  const firstPlan = getImportColumnPlan(text, currentType);
+  const suggestedType = inferImportTypeFromMapping(firstPlan.mapping, currentType);
+  if (suggestedType === currentType || normalizeImportType(suggestedType) === normalizeImportType(currentType)) {
+    return Object.assign({ suggestedType }, firstPlan);
+  }
+  return Object.assign({ suggestedType }, getImportColumnPlan(text, suggestedType));
+}
+
+function inferImportTypeFromMapping(mapping, currentType) {
+  const fields = Object.values(mapping || {}).filter(Boolean);
+  const has = (field) => fields.includes(field);
+  const descriptiveCount = ['descricao', 'marca', 'aplicacao', 'ano', 'ipi', 'preco_sem_imposto', 'grupo', 'categoria', 'montadora', 'oem', 'similar']
+    .filter(has).length;
+  const hasOnlyStock = has('estoque') && descriptiveCount === 0 && !has('preco_sp') && !has('preco_pr') && !has('preco_referencia');
+  if (has('preco_sp') && descriptiveCount === 0) return 'PRECO_SP';
+  if (has('preco_pr') && descriptiveCount === 0) return 'PRECO_PR';
+  if (hasOnlyStock) return 'PORTAL_ESTOQUE';
+  if (descriptiveCount >= 2 || has('preco_sem_imposto') || has('preco_referencia')) return 'CRISTIANO';
+  return currentType || 'CRISTIANO';
 }
 
 async function supabaseLog(acao, entidade, idEntidade, dadosNovos) {
@@ -272,6 +363,104 @@ async function supabaseLog(acao, entidade, idEntidade, dadosNovos) {
     id_entidade: idEntidade == null ? null : String(idEntidade),
     dados_novos: dadosNovos || null
   });
+}
+
+const allowedProductFields = [
+  'codigo',
+  'descricao',
+  'marca',
+  'aplicacao',
+  'ano',
+  'ipi',
+  'preco_sem_imposto',
+  'estoque',
+  'estoque_quantidade',
+  'preco_sp',
+  'preco_pr',
+  'status_estoque',
+  'status_cadastro',
+  'url_imagem',
+  'grupo',
+  'categoria',
+  'montadora',
+  'detalhes',
+  'oem',
+  'similar'
+];
+
+function normalizeImportType(tipo) {
+  if (tipo === 'CRISTIANO') return 'CADASTRO_COMPLETO';
+  return tipo || 'CATALOGO_PESQUISA';
+}
+
+function filterProductFields(product) {
+  const clean = {};
+  allowedProductFields.forEach((field) => {
+    if (!Object.prototype.hasOwnProperty.call(product, field)) return;
+    const value = product[field];
+    if (value === '' || value == null) return;
+    clean[field] = value;
+  });
+  return clean;
+}
+
+function mergeImportProduct(previous, incoming) {
+  const merged = Object.assign({}, previous);
+  Object.entries(incoming).forEach(([field, value]) => {
+    if (field === 'codigo') {
+      merged.codigo = value;
+      return;
+    }
+    if (value === '' || value == null) return;
+    merged[field] = value;
+  });
+  return merged;
+}
+
+function consolidateImportProducts(products) {
+  const byCode = new Map();
+  const duplicateCodes = new Set();
+  products.forEach((product) => {
+    if (byCode.has(product.codigo)) {
+      duplicateCodes.add(product.codigo);
+      byCode.set(product.codigo, mergeImportProduct(byCode.get(product.codigo), product));
+      return;
+    }
+    byCode.set(product.codigo, product);
+  });
+  return {
+    productsUnique: Array.from(byCode.values()).map(filterProductFields),
+    duplicateCodes: Array.from(duplicateCodes)
+  };
+}
+
+function getImportUpdatedFields(tipo) {
+  if (tipo === 'PORTAL_ESTOQUE') return ['codigo', 'estoque', 'estoque_quantidade', 'status_estoque'];
+  if (tipo === 'PRECO_SP') return ['codigo', 'preco_sp'];
+  if (tipo === 'PRECO_PR') return ['codigo', 'preco_pr'];
+  if (tipo === 'CATALOGO_PESQUISA') {
+    return ['codigo', 'descricao', 'marca', 'aplicacao', 'ano', 'grupo', 'categoria', 'montadora', 'detalhes', 'oem', 'similar'];
+  }
+  return [
+    'codigo',
+    'descricao',
+    'marca',
+    'aplicacao',
+    'ano',
+    'ipi',
+    'preco_sem_imposto',
+    'estoque',
+    'estoque_quantidade',
+    'status_estoque',
+    'status_cadastro',
+    'url_imagem',
+    'grupo',
+    'categoria',
+    'montadora',
+    'detalhes',
+    'oem',
+    'similar'
+  ];
 }
 
 function parseDelimitedTable(text) {
@@ -326,7 +515,7 @@ function parseDelimitedText(text) {
 function applyImportMapping(rows, mapping) {
   if (!mapping || !Object.values(mapping).some(Boolean)) return rows;
   return rows.map((row) => {
-    const mapped = Object.assign({}, row);
+    const mapped = {};
     Object.entries(mapping).forEach(([header, field]) => {
       if (!field) return;
       const sourceKey = normalizeHeader(header);
@@ -342,18 +531,26 @@ function suggestImportField(header, tipo) {
     codigoips: 'codigo',
     codigo: 'codigo',
     cod: 'codigo',
+    codproduto: 'codigo',
+    codigoproduto: 'codigo',
+    codigofabricante: 'codigo',
     sku: 'codigo',
     descricao: 'descricao',
     descr: 'descricao',
+    descricaoproduto: 'descricao',
     marca: 'marca',
     aplicacao: 'aplicacao',
+    aplica: 'aplicacao',
     ano: 'ano',
     ipi: 'ipi',
     precosimp: 'preco_sem_imposto',
     precosemimposto: 'preco_sem_imposto',
+    precosemimp: 'preco_sem_imposto',
     estoque: 'estoque',
     dispgeral: 'estoque',
     dispvenda: 'estoque',
+    quantidade: 'estoque',
+    qtd: 'estoque',
     qtde: 'estoque',
     grupo: 'grupo',
     categoria: 'categoria',
@@ -394,6 +591,7 @@ function normalizeHeader(value) {
 function pickImport(row, aliases) {
   for (const alias of aliases) {
     const key = normalizeHeader(alias);
+    if (Object.prototype.hasOwnProperty.call(row, alias) && row[alias] !== '') return row[alias];
     if (Object.prototype.hasOwnProperty.call(row, key) && row[key] !== '') return row[key];
   }
   return '';
@@ -401,20 +599,28 @@ function pickImport(row, aliases) {
 
 function importNumber(value) {
   let text = String(value || '').trim();
-  if (!text) return 0;
+  if (!text) return null;
   text = text.replace(/[^\d,.-]/g, '');
   if (text.includes(',') && text.includes('.')) text = text.replace(/\./g, '').replace(',', '.');
   else if (text.includes(',')) text = text.replace(',', '.');
   const parsed = Number(text);
-  return Number.isFinite(parsed) ? parsed : 0;
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function normalizeProductCode(value) {
-  const text = String(value || '').trim();
-  return /^\d+\.0$/.test(text) ? text.slice(0, -2) : text;
+  let text = String(value || '').trim();
+  if (!text) return '';
+  text = text.replace(/\s+/g, '');
+  if (/^\d+\.0+$/.test(text)) return text.replace(/\.0+$/, '');
+  if (/^\d+(?:[.,]\d+)?e\+\d+$/i.test(text)) {
+    const parsed = Number(text.replace(',', '.'));
+    if (Number.isFinite(parsed)) return parsed.toLocaleString('en-US', { useGrouping: false, maximumFractionDigits: 0 });
+  }
+  return text;
 }
 
 function mapImportProduct(row, tipo) {
+  const importType = normalizeImportType(tipo);
   const codigo = normalizeProductCode(pickImport(row, ['codigo', 'codigo ips', 'cod', 'cod.', 'sku']));
   const estoque = pickImport(row, ['estoque', 'disp geral', 'disp. geral', 'disp venda', 'disp. venda', 'qtde']);
   const precoSemImposto = importNumber(pickImport(row, [
@@ -448,18 +654,20 @@ function mapImportProduct(row, tipo) {
     'pr apos desc', 'pr.apos desc'
   ]));
 
-  if (tipo === 'PORTAL_ESTOQUE') {
+  if (importType === 'PORTAL_ESTOQUE') {
     Object.assign(base, stock);
-  } else if (tipo === 'PRECO_PR') {
-    if (price) base.preco_pr = price;
-  } else if (tipo === 'PRECO_SP') {
-    if (price) base.preco_sp = price;
+  } else if (importType === 'PRECO_PR') {
+    if (price != null) base.preco_pr = price;
+  } else if (importType === 'PRECO_SP') {
+    if (price != null) base.preco_sp = price;
+  } else if (importType === 'CATALOGO_PESQUISA') {
+    Object.assign(base, descriptive);
   } else {
     Object.assign(base, descriptive, stock);
     const precoSp = importNumber(pickImport(row, ['preco_sp', 'preco sp', 'preco c/imp sp', 'preco c imp sp']));
     const precoPr = importNumber(pickImport(row, ['preco_pr', 'preco pr', 'preco c/imp pr', 'preco c imp pr']));
-    if (precoSp) base.preco_sp = precoSp;
-    if (precoPr) base.preco_pr = precoPr;
+    if (precoSp != null) base.preco_sp = precoSp;
+    if (precoPr != null) base.preco_pr = precoPr;
   }
 
   return Object.fromEntries(Object.entries(base).filter(([, value]) => value !== ''));
