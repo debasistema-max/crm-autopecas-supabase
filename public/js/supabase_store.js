@@ -339,6 +339,9 @@ function normalizeProductCode(value) {
 function mapImportProduct(row, tipo) {
   const codigo = normalizeProductCode(pickImport(row, ['codigo', 'codigo ips', 'cod', 'cod.', 'sku']));
   const estoque = pickImport(row, ['estoque', 'disp geral', 'disp. geral', 'disp venda', 'disp. venda', 'qtde']);
+  const precoSemImposto = importNumber(pickImport(row, [
+    'preco s/imp', 'preco s imp', 'preco sem imposto', 'preco_sem_imposto', 'pr.unit.', 'pr unit'
+  ]));
   const base = { codigo };
   const descriptive = {
     descricao: pickImport(row, ['descricao', 'descr']),
@@ -346,6 +349,7 @@ function mapImportProduct(row, tipo) {
     aplicacao: pickImport(row, ['aplicacao']),
     ano: pickImport(row, ['ano']),
     ipi: importNumber(pickImport(row, ['ipi'])),
+    preco_sem_imposto: precoSemImposto,
     status_cadastro: pickImport(row, ['status cadastro', 'status_cadastro']),
     url_imagem: pickImport(row, ['url imagem', 'url_imagem', 'imagem']),
     grupo: pickImport(row, ['grupo']),
@@ -360,7 +364,11 @@ function mapImportProduct(row, tipo) {
     estoque_quantidade: importNumber(estoque),
     status_estoque: pickImport(row, ['status estoque', 'status_estoque'])
   };
-  const price = importNumber(pickImport(row, ['preco', 'valor', 'prunitci', 'pr.unit.(c/i)', 'total c imp', 'total c/ imp', 'pr apos desc', 'pr.apos desc']));
+  const price = importNumber(pickImport(row, [
+    'preco c/imp', 'preco c imp', 'preco com imposto', 'preco', 'valor',
+    'prunitci', 'pr.unit.(c/i)', 'pr unit c/i', 'total c imp', 'total c/ imp',
+    'pr apos desc', 'pr.apos desc'
+  ]));
 
   if (tipo === 'PORTAL_ESTOQUE') {
     Object.assign(base, stock);
@@ -370,8 +378,8 @@ function mapImportProduct(row, tipo) {
     if (price) base.preco_sp = price;
   } else {
     Object.assign(base, descriptive, stock);
-    const precoSp = importNumber(pickImport(row, ['preco sp', 'preco_sp'])) || price;
-    const precoPr = importNumber(pickImport(row, ['preco pr', 'preco_pr'])) || price;
+    const precoSp = importNumber(pickImport(row, ['preco sp', 'preco_sp', 'preco c/imp sp', 'preco c imp sp']));
+    const precoPr = importNumber(pickImport(row, ['preco pr', 'preco_pr', 'preco c/imp pr', 'preco c imp pr']));
     if (precoSp) base.preco_sp = precoSp;
     if (precoPr) base.preco_pr = precoPr;
   }

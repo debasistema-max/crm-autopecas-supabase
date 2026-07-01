@@ -312,20 +312,22 @@ function getImportTemplate(type) {
     PRECO_SP: {
       title: 'Tabela de preco SP',
       required: ['codigo', 'preco'],
-      optional: ['valor', 'pr.unit.(c/i)', 'pr apos desc'],
-      sample: 'codigo;preco\n7146505811;522,49\n6111032201;184,90',
+      optional: ['codigo ips', 'preco c/imp', 'valor', 'pr.unit.(c/i)', 'pr apos desc'],
+      sample: 'CODIGO IPS;PRECO C/IMP\n7146505811;522,49\n6111032201;184,90',
       notes: [
         'Atualiza somente o preco SP.',
+        'Aceita cabecalhos como PRECO C/IMP, VALOR ou PR.UNIT.(C/I).',
         'Use virgula ou ponto para decimais.'
       ]
     },
     PRECO_PR: {
       title: 'Tabela de preco PR',
       required: ['codigo', 'preco'],
-      optional: ['valor', 'pr.unit.(c/i)', 'pr apos desc'],
-      sample: 'codigo;preco\n7146505811;522,49\n6111032201;179,90',
+      optional: ['codigo ips', 'preco c/imp', 'valor', 'pr.unit.(c/i)', 'pr apos desc'],
+      sample: 'CODIGO IPS;PRECO C/IMP\n7146505811;522,49\n6111032201;179,90',
       notes: [
         'Atualiza somente o preco PR.',
+        'Aceita cabecalhos como PRECO C/IMP, VALOR ou PR.UNIT.(C/I).',
         'Use virgula ou ponto para decimais.'
       ]
     },
@@ -341,11 +343,13 @@ function getImportTemplate(type) {
     },
     CRISTIANO: {
       title: 'Cadastro completo de produtos',
-      required: ['codigo'],
-      optional: ['descricao', 'marca', 'aplicacao', 'ano', 'ipi', 'estoque', 'preco sp', 'preco pr', 'grupo', 'categoria', 'montadora', 'oem', 'similar'],
-      sample: 'codigo;descricao;marca;aplicacao;ano;ipi;estoque;preco sp;preco pr;grupo;montadora\n7146505811;BOMBA DIR.HIDRAULICA;FIAT;PALIO E-TORQ;11/20;0;50+;522,49;522,49;DIRECAO;FIAT',
+      required: ['codigo ou codigo ips'],
+      optional: ['descricao', 'marca', 'aplicacao', 'ano', 'ipi', 'preco s/imp', 'preco c/imp', 'estoque', 'grupo', 'categoria', 'montadora', 'oem', 'similar'],
+      sample: 'CODIGO IPS;DESCRICAO;MARCA;APLICACAO;ANO;IPI;PRECO S/IMP;PRECO C/IMP;ESTOQUE\n7146505811;BOMBA DIR.HIDRAULICA;FIAT;PALIO E-TORQ;11/20;0;395,00;522,49;50+',
       notes: [
-        'Atualiza cadastro, estoque e precos quando as colunas existirem.',
+        'Esse formato aceita a planilha com CODIGO IPS, DESCRICAO, MARCA, APLICACAO, ANO, IPI, PRECO S/IMP, PRECO C/IMP e ESTOQUE.',
+        'PRECO C/IMP fica apenas como referencia visual nessa importacao e nao altera SP nem PR.',
+        'Para atualizar preco estadual, use os tipos Preco SP ou Preco PR separadamente.',
         'Ideal para carga completa ou revisao geral.'
       ]
     }
