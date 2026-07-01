@@ -545,6 +545,7 @@ const PORTAL_CONFIG = {
   draftKey: 'portal_cadastro_cliente_draft',
   source: 'portal_publico',
   cnpjApi: 'https://brasilapi.com.br/api/cnpj/v1/',
+  cnpjFallbackApi: 'https://www.receitaws.com.br/v1/cnpj/',
   cadastroFunctionUrl: 'https://doenvnjzrecrtvwooaai.supabase.co/functions/v1/cadastro-cliente'
 };
 
@@ -646,9 +647,7 @@ async function consultCnpj() {
   button.disabled = true;
   setMessage('Consultando CNPJ...', 'muted');
   try {
-    const response = await fetch(PORTAL_CONFIG.cnpjApi + cnpj);
-    if (!response.ok) throw new Error('Consulta indisponivel.');
-    const data = await response.json();
+    const data = await fetchCnpjData(cnpj);
     lastCnpjData = data;
     fillCompanyData(data);
     saveDraft();
@@ -658,6 +657,61 @@ async function consultCnpj() {
   } finally {
     button.disabled = false;
   }
+}
+
+async function fetchCnpjData(cnpj) {
+  const attempts = [
+    {
+      url: PORTAL_CONFIG.cnpjApi + cnpj,
+      source: 'brasilapi'
+    },
+    {
+      url: PORTAL_CONFIG.cnpjFallbackApi + cnpj,
+      source: 'receitaws'
+    }
+  ];
+
+  let lastError = null;
+  for (const attempt of attempts) {
+    try {
+      const response = await fetch(attempt.url, { headers: { Accept: 'application/json' } });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const data = await response.json();
+      if (data.status === 'ERROR') throw new Error(data.message || 'CNPJ nao encontrado.');
+      return normalizeCnpjData(data, attempt.source);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error('Consulta indisponivel.');
+}
+
+function normalizeCnpjData(data, source) {
+  if (source === 'receitaws') {
+    const atividade = Array.isArray(data.atividade_principal) && data.atividade_principal[0]
+      ? data.atividade_principal[0]
+      : {};
+    return {
+      fonte: source,
+      razao_social: data.nome,
+      nome_fantasia: data.fantasia,
+      cnae_fiscal: atividade.code,
+      cnae_fiscal_descricao: atividade.text,
+      descricao_situacao_cadastral: data.situacao,
+      cep: data.cep,
+      descricao_tipo_de_logradouro: '',
+      logradouro: data.logradouro,
+      numero: data.numero,
+      complemento: data.complemento,
+      bairro: data.bairro,
+      municipio: data.municipio,
+      uf: data.uf,
+      ddd_telefone_1: data.telefone,
+      email: data.email,
+      raw: data
+    };
+  }
+  return Object.assign({ fonte: source, raw: data }, data);
 }
 
 function fillCompanyData(data) {
