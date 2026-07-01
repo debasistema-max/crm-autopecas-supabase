@@ -178,36 +178,46 @@ async function renderSapImport(container) {
   container.innerHTML = `
     <section class="panel">
       <div class="panel-header">
-        <div><h2>Importacao SAP</h2><p>Selecione um arquivo CSV/TSV, confira a previa e aplique no Supabase.</p></div>
+        <div><h2>Importacao SAP</h2><p>Cole a tabela do Excel ou envie um CSV/TSV. O sistema detecta as colunas automaticamente.</p></div>
       </div>
       <div class="field-grid">
-        <label class="span-4">Tipo
+        <label class="span-4">O que atualizar?
           <select id="importType">
+            <option value="CRISTIANO" selected>Cadastro produtos</option>
             <option value="PORTAL_ESTOQUE">Estoque</option>
             <option value="PRECO_SP">Preco SP</option>
             <option value="PRECO_PR">Preco PR</option>
             <option value="CATALOGO_PESQUISA">Catalogo pesquisa</option>
-            <option value="CRISTIANO">Cadastro produtos</option>
           </select>
         </label>
-        <label class="span-8">Arquivo CSV/TSV
+        <label class="span-8">Arquivo
           <input id="importFile" type="file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values">
         </label>
-        <label class="span-12">Dados CSV/TSV<textarea id="importText" placeholder="codigo;descricao;estoque;preco sp"></textarea></label>
+        <label class="span-12">Tabela colada
+          <textarea id="importText" placeholder="CODIGO IPS;DESCRICAO;MARCA;APLICACAO;ANO;IPI;PRECO S/IMP;PRECO C/IMP;ESTOQUE"></textarea>
+        </label>
       </div>
       <div class="actions-row">
-        <button class="btn btn-ghost" id="detectColumnsButton" type="button">Detectar colunas</button>
-        <button class="btn btn-secondary" id="previewImportButton" type="button">Conferir previa</button>
-        <button class="btn btn-primary" id="applyImportButton" type="button" disabled>Aplicar importacao</button>
+        <button class="btn btn-primary" id="previewImportButton" type="button">Verificar dados</button>
+        <button class="btn btn-secondary" id="applyImportButton" type="button" disabled>Importar</button>
+        <button class="btn btn-ghost" id="clearImportButton" type="button">Limpar</button>
         <p id="importMessage" class="form-message"></p>
       </div>
     </section>
-    <section class="panel" id="importTemplate"></section>
-    <section class="panel" id="importMapping">
-      <div class="empty-state">Cole ou selecione um arquivo para mapear as colunas.</div>
+    <section class="panel">
+      <details class="import-help">
+        <summary>Ver modelos aceitos</summary>
+        <div id="importTemplate"></div>
+      </details>
+      <details class="import-help" id="importMappingDetails">
+        <summary>Ajustar colunas detectadas</summary>
+        <div id="importMapping">
+          <div class="empty-state">Cole ou selecione um arquivo para mapear as colunas.</div>
+        </div>
+      </details>
     </section>
     <section class="panel" id="importPreview">
-      <div class="empty-state">A previa aparece aqui antes da importacao.</div>
+      <div class="empty-state">Clique em Verificar dados antes de importar.</div>
     </section>
   `;
 
@@ -224,7 +234,7 @@ async function renderSapImport(container) {
       document.getElementById('importText').value = getImportTemplate(document.getElementById('importType').value).sample;
       currentImportPlan = null;
       document.getElementById('applyImportButton').disabled = true;
-      document.getElementById('importPreview').innerHTML = '<div class="empty-state">Modelo carregado. Gere a previa antes de aplicar.</div>';
+      document.getElementById('importPreview').innerHTML = '<div class="empty-state">Modelo carregado. Clique em Verificar dados.</div>';
       refreshImportMapping();
     });
   };
@@ -249,19 +259,14 @@ async function renderSapImport(container) {
     document.getElementById('importText').value = await file.text();
     currentImportPlan = null;
     document.getElementById('applyImportButton').disabled = true;
-    document.getElementById('importPreview').innerHTML = '<div class="empty-state">Arquivo carregado. Confira a previa antes de aplicar.</div>';
+    document.getElementById('importPreview').innerHTML = '<div class="empty-state">Arquivo carregado. Clique em Verificar dados.</div>';
     refreshImportMapping();
-  });
-
-  document.getElementById('detectColumnsButton').addEventListener('click', () => {
-    refreshImportMapping();
-    document.getElementById('importMessage').style.color = 'var(--muted)';
-    document.getElementById('importMessage').textContent = 'Colunas detectadas. Ajuste o mapeamento se necessario.';
   });
 
   document.getElementById('importText').addEventListener('input', () => {
     currentImportPlan = null;
     document.getElementById('applyImportButton').disabled = true;
+    document.getElementById('importPreview').innerHTML = '<div class="empty-state">Clique em Verificar dados antes de importar.</div>';
   });
 
   document.getElementById('importType').addEventListener('change', () => {
@@ -269,17 +274,28 @@ async function renderSapImport(container) {
     document.getElementById('applyImportButton').disabled = true;
     refreshImportTemplate();
     refreshImportMapping();
-    document.getElementById('importPreview').innerHTML = '<div class="empty-state">Tipo alterado. Gere uma nova previa.</div>';
+    document.getElementById('importPreview').innerHTML = '<div class="empty-state">Tipo alterado. Clique em Verificar dados.</div>';
+  });
+
+  document.getElementById('clearImportButton').addEventListener('click', () => {
+    currentImportPlan = null;
+    document.getElementById('importText').value = '';
+    document.getElementById('importFile').value = '';
+    document.getElementById('applyImportButton').disabled = true;
+    document.getElementById('importMessage').textContent = '';
+    document.getElementById('importMapping').innerHTML = '<div class="empty-state">Cole ou selecione um arquivo para mapear as colunas.</div>';
+    document.getElementById('importPreview').innerHTML = '<div class="empty-state">Clique em Verificar dados antes de importar.</div>';
   });
 
   document.getElementById('previewImportButton').addEventListener('click', async () => {
     const message = document.getElementById('importMessage');
     const preview = document.getElementById('importPreview');
     message.style.color = 'var(--muted)';
-    message.textContent = 'Analisando arquivo...';
+    message.textContent = 'Verificando dados...';
     preview.innerHTML = '<div class="empty-state">Lendo dados e comparando com o Supabase...</div>';
     document.getElementById('applyImportButton').disabled = true;
     try {
+      if (!document.querySelector('[data-import-map]')) refreshImportMapping();
       currentImportPlan = await supabasePreviewImportProducts({
         tipo: document.getElementById('importType').value,
         texto: document.getElementById('importText').value,
@@ -287,7 +303,7 @@ async function renderSapImport(container) {
       });
       preview.innerHTML = renderImportPreview(currentImportPlan);
       message.style.color = 'var(--success)';
-      message.textContent = 'Previa pronta. Revise os dados antes de aplicar.';
+      message.textContent = 'Dados verificados. Pode importar.';
       document.getElementById('applyImportButton').disabled = false;
     } catch (error) {
       currentImportPlan = null;
