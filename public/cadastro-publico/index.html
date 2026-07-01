@@ -546,6 +546,7 @@ const PORTAL_CONFIG = {
   source: 'portal_publico',
   cnpjApi: 'https://brasilapi.com.br/api/cnpj/v1/',
   cnpjFallbackApi: 'https://www.receitaws.com.br/v1/cnpj/',
+  cnpjFunctionUrl: 'https://doenvnjzrecrtvwooaai.supabase.co/functions/v1/consulta-cnpj',
   cadastroFunctionUrl: 'https://doenvnjzrecrtvwooaai.supabase.co/functions/v1/cadastro-cliente'
 };
 
@@ -660,6 +661,15 @@ async function consultCnpj() {
 }
 
 async function fetchCnpjData(cnpj) {
+  if (PORTAL_CONFIG.cnpjFunctionUrl) {
+    const response = await fetch(PORTAL_CONFIG.cnpjFunctionUrl + '?cnpj=' + encodeURIComponent(cnpj), {
+      headers: { Accept: 'application/json' }
+    });
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.error || 'Consulta indisponivel.');
+    return result.data;
+  }
+
   const attempts = [
     {
       url: PORTAL_CONFIG.cnpjApi + cnpj,
