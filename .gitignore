@@ -20,10 +20,10 @@ apps-script/
 crm-autopecas-ips/
 crm-autopecas-novo/
 DEPLOY_FIREBASE_APPS_SCRIPT.md
-app.js
+/app.js
 /index.html
-styles.css
-assets/
+/styles.css
+/assets/
 
 # Old Firebase artifacts
 .firebase/
