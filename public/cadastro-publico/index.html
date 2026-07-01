@@ -149,6 +149,10 @@ button, input, select, textarea { font: inherit; }
   line-height: 1.45;
 }
 
+.upload-hint {
+  font-weight: 800;
+}
+
 .field-grid {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
@@ -259,17 +263,24 @@ textarea:focus {
   gap: 10px;
 }
 
-.documents-list article {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
+.document-upload {
+  display: grid;
+  gap: 8px;
   padding: 14px;
   border: 1px dashed var(--line);
   border-radius: var(--radius);
   background: #f8fbfa;
+  color: var(--text);
 }
 
-.documents-list span {
+.document-upload input {
+  min-height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.document-upload span {
   color: var(--muted);
   font-size: 13px;
   font-weight: 800;
@@ -507,14 +518,30 @@ textarea:focus {
       <section class="form-step" data-step="4">
         <div class="section-title">
           <h2>Documentos</h2>
-          <p>A estrutura de upload ja esta preparada. Nesta fase, os anexos serao solicitados pela equipe se necessario.</p>
+          <p>Envie os principais documentos para agilizar a analise do cadastro.</p>
+          <p class="upload-hint">Limite: ate 5 arquivos, 5 MB por arquivo e 15 MB no total.</p>
         </div>
-        <div class="documents-list">
-          <article><strong>Cartao CNPJ</strong><span>Upload em breve</span></article>
-          <article><strong>Contrato Social</strong><span>Upload em breve</span></article>
-          <article><strong>Comprovante de Endereco</strong><span>Upload em breve</span></article>
-          <article><strong>Inscricao Estadual</strong><span>Upload em breve</span></article>
-          <article><strong>Outros</strong><span>Upload em breve</span></article>
+        <div class="documents-list" id="documentsList">
+          <label class="document-upload">Cartao CNPJ
+            <input type="file" name="doc_cartao_cnpj" data-doc-label="Cartao CNPJ" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp">
+            <span>Nenhum arquivo selecionado</span>
+          </label>
+          <label class="document-upload">Contrato Social
+            <input type="file" name="doc_contrato_social" data-doc-label="Contrato Social" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp">
+            <span>Nenhum arquivo selecionado</span>
+          </label>
+          <label class="document-upload">Comprovante de Endereco
+            <input type="file" name="doc_comprovante_endereco" data-doc-label="Comprovante de Endereco" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp">
+            <span>Nenhum arquivo selecionado</span>
+          </label>
+          <label class="document-upload">Inscricao Estadual
+            <input type="file" name="doc_inscricao_estadual" data-doc-label="Inscricao Estadual" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp">
+            <span>Nenhum arquivo selecionado</span>
+          </label>
+          <label class="document-upload">Outros documentos
+            <input type="file" name="doc_outros" data-doc-label="Outros documentos" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp" multiple>
+            <span>Nenhum arquivo selecionado</span>
+          </label>
         </div>
       </section>
 
@@ -573,6 +600,10 @@ initPortalSupabase();
 const steps = ['Empresa', 'Contato', 'Comercial', 'Fiscal', 'Documentos'];
 let currentStep = 0;
 let lastCnpjData = null;
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+const MAX_TOTAL_UPLOAD_BYTES = 15 * 1024 * 1024;
+const MAX_UPLOAD_FILES = 5;
+const ALLOWED_UPLOAD_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
 
 document.addEventListener('DOMContentLoaded', () => {
   restoreDraft();
@@ -589,6 +620,9 @@ function bindEvents() {
   document.getElementById('cadastroForm').addEventListener('input', () => {
     applyMasks();
     saveDraft();
+  });
+  document.querySelectorAll('input[type="file"]').forEach((input) => {
+    input.addEventListener('change', updateDocumentLabel);
   });
   document.querySelectorAll('input[name="possui_regime_especial"]').forEach((input) => {
     input.addEventListener('change', toggleRegimeFields);
@@ -750,9 +784,10 @@ async function submitCadastro(event) {
   }
   const button = document.getElementById('submitForm');
   button.disabled = true;
-  setMessage('Enviando cadastro...', 'muted');
+  setMessage('Preparando documentos...', 'muted');
   try {
-    const payload = buildPayload();
+    const payload = await buildPayload();
+    setMessage('Enviando cadastro...', 'muted');
     const data = await saveCadastro(payload);
     localStorage.removeItem(PORTAL_CONFIG.draftKey);
     document.getElementById('cadastroForm').hidden = true;
@@ -791,7 +826,7 @@ async function saveCadastro(payload) {
   return data;
 }
 
-function buildPayload() {
+async function buildPayload() {
   const data = getFormData();
   return {
     cnpj: onlyDigits(data.cnpj),
@@ -825,6 +860,7 @@ function buildPayload() {
     possui_regime_especial: data.possui_regime_especial === 'true',
     descricao_regime: data.descricao_regime,
     estados_regime: data.estados_regime,
+    anexos: await readAttachments(),
     origem: PORTAL_CONFIG.source,
     dados_api_cnpj: lastCnpjData
   };
@@ -833,9 +869,66 @@ function buildPayload() {
 function getFormData() {
   const data = {};
   new FormData(document.getElementById('cadastroForm')).forEach((value, key) => {
+    if (value instanceof File) return;
     data[key] = String(value || '').trim();
   });
   return data;
+}
+
+async function readAttachments() {
+  const attachments = [];
+  let totalBytes = 0;
+  const inputs = Array.from(document.querySelectorAll('input[type="file"]'));
+  for (const input of inputs) {
+    const label = input.dataset.docLabel || input.name;
+    for (const file of Array.from(input.files || [])) {
+      if (attachments.length >= MAX_UPLOAD_FILES) {
+        throw new Error('Envie no maximo ' + MAX_UPLOAD_FILES + ' arquivos.');
+      }
+      validateAttachment(file);
+      totalBytes += file.size;
+      if (totalBytes > MAX_TOTAL_UPLOAD_BYTES) {
+        throw new Error('O total dos arquivos nao pode ultrapassar 15 MB.');
+      }
+      attachments.push({
+        field: input.name,
+        label,
+        name: file.name,
+        type: file.type || 'application/octet-stream',
+        size: file.size,
+        content: await fileToBase64(file)
+      });
+    }
+  }
+  return attachments;
+}
+
+function validateAttachment(file) {
+  if (file.size > MAX_UPLOAD_BYTES) {
+    throw new Error('O arquivo ' + file.name + ' ultrapassa 5 MB.');
+  }
+  if (!ALLOWED_UPLOAD_TYPES.includes(file.type)) {
+    throw new Error('O arquivo ' + file.name + ' deve ser PDF, JPG, PNG ou WEBP.');
+  }
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '');
+    reader.onerror = () => reject(new Error('Nao foi possivel ler o arquivo ' + file.name + '.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function updateDocumentLabel(event) {
+  const input = event.currentTarget;
+  const output = input.parentElement.querySelector('span');
+  const files = Array.from(input.files || []);
+  if (!output) return;
+  output.textContent = files.length
+    ? files.map((file) => file.name).join(', ')
+    : 'Nenhum arquivo selecionado';
 }
 
 function saveDraft() {
