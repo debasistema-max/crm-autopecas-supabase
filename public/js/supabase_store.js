@@ -203,7 +203,8 @@ async function supabaseImportProducts(payload) {
 
 async function supabasePreviewImportProducts(payload) {
   const tipo = payload.tipo || 'CATALOGO_PESQUISA';
-  const rows = parseDelimitedText(payload.texto || '');
+  const table = parseDelimitedTable(payload.texto || '');
+  const rows = applyImportMapping(table.rows, payload.mapping);
   if (!rows.length) throw new Error('Cole ou selecione um CSV/TSV com cabecalho.');
 
   const seen = new Set();
@@ -248,6 +249,15 @@ async function supabasePreviewImportProducts(payload) {
   };
 }
 
+function getImportColumnPlan(text, tipo) {
+  const table = parseDelimitedTable(text || '');
+  return {
+    headers: table.headers,
+    sampleRows: table.rows.slice(0, 3),
+    mapping: Object.fromEntries(table.headers.map((header) => [header, suggestImportField(header, tipo)]))
+  };
+}
+
 async function supabaseLog(acao, entidade, idEntidade, dadosNovos) {
   const session = getStoredSession() || {};
   await supabaseClient.from('logs').insert({
@@ -259,9 +269,9 @@ async function supabaseLog(acao, entidade, idEntidade, dadosNovos) {
   });
 }
 
-function parseDelimitedText(text) {
+function parseDelimitedTable(text) {
   const source = String(text || '').trim();
-  if (!source) return [];
+  if (!source) return { headers: [], rows: [] };
   const delimiter = source.includes('\t') ? '\t' : detectCsvDelimiter(source);
   const rows = [];
   let row = [];
@@ -290,14 +300,77 @@ function parseDelimitedText(text) {
   }
   row.push(value);
   if (row.some((cell) => String(cell).trim())) rows.push(row);
-  const headers = (rows.shift() || []).map(normalizeHeader);
-  return rows.map((cells) => {
+  const originalHeaders = rows.shift() || [];
+  const headers = originalHeaders.map(normalizeHeader);
+  return {
+    headers: originalHeaders.map((header) => String(header || '').trim()),
+    rows: rows.map((cells) => {
     const item = {};
     headers.forEach((header, index) => {
       if (header) item[header] = String(cells[index] || '').trim();
     });
     return item;
+    })
+  };
+}
+
+function parseDelimitedText(text) {
+  return parseDelimitedTable(text).rows;
+}
+
+function applyImportMapping(rows, mapping) {
+  if (!mapping || !Object.values(mapping).some(Boolean)) return rows;
+  return rows.map((row) => {
+    const mapped = Object.assign({}, row);
+    Object.entries(mapping).forEach(([header, field]) => {
+      if (!field) return;
+      const sourceKey = normalizeHeader(header);
+      if (Object.prototype.hasOwnProperty.call(row, sourceKey)) mapped[field] = row[sourceKey];
+    });
+    return mapped;
   });
+}
+
+function suggestImportField(header, tipo) {
+  const key = normalizeHeader(header);
+  const exact = {
+    codigoips: 'codigo',
+    codigo: 'codigo',
+    cod: 'codigo',
+    sku: 'codigo',
+    descricao: 'descricao',
+    descr: 'descricao',
+    marca: 'marca',
+    aplicacao: 'aplicacao',
+    ano: 'ano',
+    ipi: 'ipi',
+    precosimp: 'preco_sem_imposto',
+    precosemimposto: 'preco_sem_imposto',
+    estoque: 'estoque',
+    dispgeral: 'estoque',
+    dispvenda: 'estoque',
+    qtde: 'estoque',
+    grupo: 'grupo',
+    categoria: 'categoria',
+    montadora: 'montadora',
+    oem: 'oem',
+    similar: 'similar',
+    similares: 'similar'
+  };
+  if (exact[key]) return exact[key];
+  if (['precocimp', 'precocomimposto', 'valor', 'prunitci', 'totalcimp', 'praposdesc'].includes(key)) {
+    if (tipo === 'PRECO_SP') return 'preco_sp';
+    if (tipo === 'PRECO_PR') return 'preco_pr';
+    return 'preco_referencia';
+  }
+  if (key.includes('precosp')) return 'preco_sp';
+  if (key.includes('precopr')) return 'preco_pr';
+  if (key.includes('preco') && key.includes('imp')) {
+    if (tipo === 'PRECO_SP') return 'preco_sp';
+    if (tipo === 'PRECO_PR') return 'preco_pr';
+    return 'preco_referencia';
+  }
+  return '';
 }
 
 function detectCsvDelimiter(text) {
@@ -365,7 +438,7 @@ function mapImportProduct(row, tipo) {
     status_estoque: pickImport(row, ['status estoque', 'status_estoque'])
   };
   const price = importNumber(pickImport(row, [
-    'preco c/imp', 'preco c imp', 'preco com imposto', 'preco', 'valor',
+    'preco_sp', 'preco_pr', 'preco_referencia', 'preco c/imp', 'preco c imp', 'preco com imposto', 'preco', 'valor',
     'prunitci', 'pr.unit.(c/i)', 'pr unit c/i', 'total c imp', 'total c/ imp',
     'pr apos desc', 'pr.apos desc'
   ]));
@@ -378,8 +451,8 @@ function mapImportProduct(row, tipo) {
     if (price) base.preco_sp = price;
   } else {
     Object.assign(base, descriptive, stock);
-    const precoSp = importNumber(pickImport(row, ['preco sp', 'preco_sp', 'preco c/imp sp', 'preco c imp sp']));
-    const precoPr = importNumber(pickImport(row, ['preco pr', 'preco_pr', 'preco c/imp pr', 'preco c imp pr']));
+    const precoSp = importNumber(pickImport(row, ['preco_sp', 'preco sp', 'preco c/imp sp', 'preco c imp sp']));
+    const precoPr = importNumber(pickImport(row, ['preco_pr', 'preco pr', 'preco c/imp pr', 'preco c imp pr']));
     if (precoSp) base.preco_sp = precoSp;
     if (precoPr) base.preco_pr = precoPr;
   }

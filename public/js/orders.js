@@ -196,12 +196,16 @@ async function renderSapImport(container) {
         <label class="span-12">Dados CSV/TSV<textarea id="importText" placeholder="codigo;descricao;estoque;preco sp"></textarea></label>
       </div>
       <div class="actions-row">
+        <button class="btn btn-ghost" id="detectColumnsButton" type="button">Detectar colunas</button>
         <button class="btn btn-secondary" id="previewImportButton" type="button">Conferir previa</button>
         <button class="btn btn-primary" id="applyImportButton" type="button" disabled>Aplicar importacao</button>
         <p id="importMessage" class="form-message"></p>
       </div>
     </section>
     <section class="panel" id="importTemplate"></section>
+    <section class="panel" id="importMapping">
+      <div class="empty-state">Cole ou selecione um arquivo para mapear as colunas.</div>
+    </section>
     <section class="panel" id="importPreview">
       <div class="empty-state">A previa aparece aqui antes da importacao.</div>
     </section>
@@ -221,9 +225,23 @@ async function renderSapImport(container) {
       currentImportPlan = null;
       document.getElementById('applyImportButton').disabled = true;
       document.getElementById('importPreview').innerHTML = '<div class="empty-state">Modelo carregado. Gere a previa antes de aplicar.</div>';
+      refreshImportMapping();
     });
   };
   refreshImportTemplate();
+
+  const refreshImportMapping = () => {
+    currentImportPlan = null;
+    document.getElementById('applyImportButton').disabled = true;
+    const target = document.getElementById('importMapping');
+    const text = document.getElementById('importText').value;
+    try {
+      const plan = getImportColumnPlan(text, document.getElementById('importType').value);
+      target.innerHTML = renderImportMapping(plan);
+    } catch (error) {
+      target.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+    }
+  };
 
   document.getElementById('importFile').addEventListener('change', async (event) => {
     const file = event.target.files && event.target.files[0];
@@ -232,12 +250,25 @@ async function renderSapImport(container) {
     currentImportPlan = null;
     document.getElementById('applyImportButton').disabled = true;
     document.getElementById('importPreview').innerHTML = '<div class="empty-state">Arquivo carregado. Confira a previa antes de aplicar.</div>';
+    refreshImportMapping();
+  });
+
+  document.getElementById('detectColumnsButton').addEventListener('click', () => {
+    refreshImportMapping();
+    document.getElementById('importMessage').style.color = 'var(--muted)';
+    document.getElementById('importMessage').textContent = 'Colunas detectadas. Ajuste o mapeamento se necessario.';
+  });
+
+  document.getElementById('importText').addEventListener('input', () => {
+    currentImportPlan = null;
+    document.getElementById('applyImportButton').disabled = true;
   });
 
   document.getElementById('importType').addEventListener('change', () => {
     currentImportPlan = null;
     document.getElementById('applyImportButton').disabled = true;
     refreshImportTemplate();
+    refreshImportMapping();
     document.getElementById('importPreview').innerHTML = '<div class="empty-state">Tipo alterado. Gere uma nova previa.</div>';
   });
 
@@ -251,7 +282,8 @@ async function renderSapImport(container) {
     try {
       currentImportPlan = await supabasePreviewImportProducts({
         tipo: document.getElementById('importType').value,
-        texto: document.getElementById('importText').value
+        texto: document.getElementById('importText').value,
+        mapping: getCurrentImportMapping()
       });
       preview.innerHTML = renderImportPreview(currentImportPlan);
       message.style.color = 'var(--success)';
@@ -281,6 +313,7 @@ async function renderSapImport(container) {
       const data = await supabaseImportProducts({
         tipo: document.getElementById('importType').value,
         texto: document.getElementById('importText').value,
+        mapping: getCurrentImportMapping(),
         onProgress: (progress) => {
           message.textContent = 'Importando ' + progress.done + ' de ' + progress.total + ' produtos...';
         }
@@ -295,6 +328,69 @@ async function renderSapImport(container) {
       button.disabled = false;
     }
   });
+}
+
+function getImportFieldOptions() {
+  return [
+    ['', 'Ignorar'],
+    ['codigo', 'Codigo'],
+    ['descricao', 'Descricao'],
+    ['marca', 'Marca'],
+    ['aplicacao', 'Aplicacao'],
+    ['ano', 'Ano'],
+    ['ipi', 'IPI'],
+    ['preco_sem_imposto', 'Preco s/ imposto'],
+    ['preco_referencia', 'Preco c/ imposto ref.'],
+    ['preco_sp', 'Preco SP'],
+    ['preco_pr', 'Preco PR'],
+    ['estoque', 'Estoque'],
+    ['status_estoque', 'Status estoque'],
+    ['grupo', 'Grupo'],
+    ['categoria', 'Categoria'],
+    ['montadora', 'Montadora'],
+    ['detalhes', 'Detalhes/palavras-chave'],
+    ['oem', 'OEM'],
+    ['similar', 'Similar']
+  ];
+}
+
+function renderImportMapping(plan) {
+  if (!plan.headers.length) return '<div class="empty-state">Nenhum cabecalho encontrado.</div>';
+  return `
+    <div class="panel-header">
+      <div><h2>Mapeamento de colunas</h2><p>Confirme para onde cada coluna da sua tabela deve ir.</p></div>
+    </div>
+    <div class="mapping-grid">
+      ${plan.headers.map((header) => renderMappingRow(header, plan.mapping[header], plan.sampleRows)).join('')}
+    </div>
+  `;
+}
+
+function renderMappingRow(header, selected, sampleRows) {
+  const normalized = normalizeHeader(header);
+  const sample = sampleRows.map((row) => row[normalized]).filter(Boolean).slice(0, 2).join(' | ');
+  return `
+    <label class="mapping-row">
+      <span>
+        <strong>${escapeHtml(header)}</strong>
+        <small>${escapeHtml(sample)}</small>
+      </span>
+      <select data-import-map="${escapeHtml(header)}">
+        ${getImportFieldOptions().map(([value, label]) => `
+          <option value="${escapeHtml(value)}"${value === selected ? ' selected' : ''}>${escapeHtml(label)}</option>
+        `).join('')}
+      </select>
+    </label>
+  `;
+}
+
+function getCurrentImportMapping() {
+  return Object.fromEntries(
+    Array.from(document.querySelectorAll('[data-import-map]')).map((select) => [
+      select.dataset.importMap,
+      select.value
+    ])
+  );
 }
 
 function getImportTemplate(type) {
