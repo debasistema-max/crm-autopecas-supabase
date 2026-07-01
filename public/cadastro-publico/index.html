@@ -484,6 +484,9 @@ textarea:focus {
           <label class="span-6">Transportadora preferida
             <input name="transportadora">
           </label>
+          <label class="span-6">Nome do vendedor
+            <input name="vendedor" placeholder="Quem esta atendendo este cliente">
+          </label>
           <label class="span-6">Prazo desejado
             <input name="prazo_desejado" placeholder="Ex.: 28/35/42 dias">
           </label>
@@ -851,6 +854,7 @@ async function buildPayload() {
     como_conheceu: data.origem_conhecimento,
     segmento: data.segmento,
     transportadora: data.transportadora,
+    vendedor: data.vendedor,
     prazo_desejado: data.prazo_desejado,
     volume_estimado: data.volume_estimado,
     observacoes: data.observacoes,
