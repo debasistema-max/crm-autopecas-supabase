@@ -21,7 +21,7 @@ crm-autopecas-ips/
 crm-autopecas-novo/
 DEPLOY_FIREBASE_APPS_SCRIPT.md
 app.js
-index.html
+/index.html
 styles.css
 assets/
 
