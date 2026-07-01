@@ -270,6 +270,52 @@ th {
   font-size: 13px;
 }
 
+.import-format {
+  display: grid;
+  grid-template-columns: minmax(0, 240px) minmax(0, 1fr);
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.import-format div {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: #f8fafb;
+}
+
+.import-format span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.import-format strong {
+  display: block;
+  margin-top: 6px;
+  line-height: 1.45;
+}
+
+.import-sample {
+  overflow-x: auto;
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #111c24;
+  color: #edf4f3;
+  font-size: 13px;
+}
+
+.import-notes {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .import-table table {
   min-width: 640px;
 }
@@ -293,6 +339,7 @@ button:disabled {
   .icon-button { display: inline-grid; place-items: center; }
   .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .import-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .import-format { grid-template-columns: 1fr; }
   .order-grid { grid-template-columns: 1fr; }
   .cart-summary { position: static; }
 }

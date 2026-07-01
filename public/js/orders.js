@@ -201,10 +201,29 @@ async function renderSapImport(container) {
         <p id="importMessage" class="form-message"></p>
       </div>
     </section>
+    <section class="panel" id="importTemplate"></section>
     <section class="panel" id="importPreview">
       <div class="empty-state">A previa aparece aqui antes da importacao.</div>
     </section>
   `;
+
+  const refreshImportTemplate = () => {
+    document.getElementById('importTemplate').innerHTML = renderImportTemplate(document.getElementById('importType').value);
+    const copyButton = document.getElementById('copyImportTemplate');
+    const fillButton = document.getElementById('fillImportTemplate');
+    copyButton.addEventListener('click', async () => {
+      await navigator.clipboard.writeText(getImportTemplate(document.getElementById('importType').value).sample);
+      document.getElementById('importMessage').style.color = 'var(--success)';
+      document.getElementById('importMessage').textContent = 'Modelo copiado.';
+    });
+    fillButton.addEventListener('click', () => {
+      document.getElementById('importText').value = getImportTemplate(document.getElementById('importType').value).sample;
+      currentImportPlan = null;
+      document.getElementById('applyImportButton').disabled = true;
+      document.getElementById('importPreview').innerHTML = '<div class="empty-state">Modelo carregado. Gere a previa antes de aplicar.</div>';
+    });
+  };
+  refreshImportTemplate();
 
   document.getElementById('importFile').addEventListener('change', async (event) => {
     const file = event.target.files && event.target.files[0];
@@ -218,6 +237,7 @@ async function renderSapImport(container) {
   document.getElementById('importType').addEventListener('change', () => {
     currentImportPlan = null;
     document.getElementById('applyImportButton').disabled = true;
+    refreshImportTemplate();
     document.getElementById('importPreview').innerHTML = '<div class="empty-state">Tipo alterado. Gere uma nova previa.</div>';
   });
 
@@ -275,6 +295,89 @@ async function renderSapImport(container) {
       button.disabled = false;
     }
   });
+}
+
+function getImportTemplate(type) {
+  const templates = {
+    PORTAL_ESTOQUE: {
+      title: 'Lista de estoque',
+      required: ['codigo', 'estoque'],
+      optional: ['status estoque'],
+      sample: 'codigo;estoque;status estoque\n7146505811;50+;DISPONIVEL\n6111032201;0;SEM ESTOQUE',
+      notes: [
+        'Atualiza somente estoque e status de estoque.',
+        'Nao altera descricao, marca nem precos.'
+      ]
+    },
+    PRECO_SP: {
+      title: 'Tabela de preco SP',
+      required: ['codigo', 'preco'],
+      optional: ['valor', 'pr.unit.(c/i)', 'pr apos desc'],
+      sample: 'codigo;preco\n7146505811;522,49\n6111032201;184,90',
+      notes: [
+        'Atualiza somente o preco SP.',
+        'Use virgula ou ponto para decimais.'
+      ]
+    },
+    PRECO_PR: {
+      title: 'Tabela de preco PR',
+      required: ['codigo', 'preco'],
+      optional: ['valor', 'pr.unit.(c/i)', 'pr apos desc'],
+      sample: 'codigo;preco\n7146505811;522,49\n6111032201;179,90',
+      notes: [
+        'Atualiza somente o preco PR.',
+        'Use virgula ou ponto para decimais.'
+      ]
+    },
+    CATALOGO_PESQUISA: {
+      title: 'Catalogo de pesquisa',
+      required: ['codigo'],
+      optional: ['descricao', 'marca', 'aplicacao', 'ano', 'grupo', 'categoria', 'montadora', 'detalhes', 'oem', 'similar'],
+      sample: 'codigo;descricao;marca;aplicacao;ano;grupo;categoria;montadora;similar\n7146505811;BOMBA DIR.HIDRAULICA;FIAT;PALIO E-TORQ;11/20;DIRECAO;BOMBA;FIAT;7146505810',
+      notes: [
+        'Enriquece a busca por descricao, aplicacao, montadora, OEM e similares.',
+        'Nao precisa conter estoque ou preco.'
+      ]
+    },
+    CRISTIANO: {
+      title: 'Cadastro completo de produtos',
+      required: ['codigo'],
+      optional: ['descricao', 'marca', 'aplicacao', 'ano', 'ipi', 'estoque', 'preco sp', 'preco pr', 'grupo', 'categoria', 'montadora', 'oem', 'similar'],
+      sample: 'codigo;descricao;marca;aplicacao;ano;ipi;estoque;preco sp;preco pr;grupo;montadora\n7146505811;BOMBA DIR.HIDRAULICA;FIAT;PALIO E-TORQ;11/20;0;50+;522,49;522,49;DIRECAO;FIAT',
+      notes: [
+        'Atualiza cadastro, estoque e precos quando as colunas existirem.',
+        'Ideal para carga completa ou revisao geral.'
+      ]
+    }
+  };
+  return templates[type] || templates.CATALOGO_PESQUISA;
+}
+
+function renderImportTemplate(type) {
+  const template = getImportTemplate(type);
+  return `
+    <div class="panel-header">
+      <div><h2>Formato esperado</h2><p>${escapeHtml(template.title)}</p></div>
+      <div class="actions-row">
+        <button class="btn btn-secondary" id="copyImportTemplate" type="button">Copiar modelo</button>
+        <button class="btn btn-ghost" id="fillImportTemplate" type="button">Usar exemplo</button>
+      </div>
+    </div>
+    <div class="import-format">
+      <div>
+        <span>Obrigatorias</span>
+        <strong>${template.required.map(escapeHtml).join(', ')}</strong>
+      </div>
+      <div>
+        <span>Aceitas</span>
+        <strong>${template.optional.map(escapeHtml).join(', ')}</strong>
+      </div>
+    </div>
+    <pre class="import-sample"><code>${escapeHtml(template.sample)}</code></pre>
+    <ul class="import-notes">
+      ${template.notes.map((note) => `<li>${escapeHtml(note)}</li>`).join('')}
+    </ul>
+  `;
 }
 
 function renderImportPreview(plan) {
