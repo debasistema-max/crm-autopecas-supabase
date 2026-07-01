@@ -174,10 +174,11 @@ async function saveCurrentOrder() {
 }
 
 async function renderSapImport(container) {
+  let currentImportPlan = null;
   container.innerHTML = `
     <section class="panel">
       <div class="panel-header">
-        <div><h2>Importacao SAP</h2><p>Cole CSV ou TSV com cabecalho para importar direto no Supabase.</p></div>
+        <div><h2>Importacao SAP</h2><p>Selecione um arquivo CSV/TSV, confira a previa e aplique no Supabase.</p></div>
       </div>
       <div class="field-grid">
         <label class="span-4">Tipo
@@ -189,27 +190,140 @@ async function renderSapImport(container) {
             <option value="CRISTIANO">Cadastro produtos</option>
           </select>
         </label>
-        <label class="span-12">Dados CSV/TSV<textarea id="importText"></textarea></label>
+        <label class="span-8">Arquivo CSV/TSV
+          <input id="importFile" type="file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values">
+        </label>
+        <label class="span-12">Dados CSV/TSV<textarea id="importText" placeholder="codigo;descricao;estoque;preco sp"></textarea></label>
       </div>
       <div class="actions-row">
-        <button class="btn btn-primary" id="applyImportButton" type="button">Importar</button>
+        <button class="btn btn-secondary" id="previewImportButton" type="button">Conferir previa</button>
+        <button class="btn btn-primary" id="applyImportButton" type="button" disabled>Aplicar importacao</button>
         <p id="importMessage" class="form-message"></p>
       </div>
     </section>
+    <section class="panel" id="importPreview">
+      <div class="empty-state">A previa aparece aqui antes da importacao.</div>
+    </section>
   `;
-  document.getElementById('applyImportButton').addEventListener('click', async () => {
+
+  document.getElementById('importFile').addEventListener('change', async (event) => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    document.getElementById('importText').value = await file.text();
+    currentImportPlan = null;
+    document.getElementById('applyImportButton').disabled = true;
+    document.getElementById('importPreview').innerHTML = '<div class="empty-state">Arquivo carregado. Confira a previa antes de aplicar.</div>';
+  });
+
+  document.getElementById('importType').addEventListener('change', () => {
+    currentImportPlan = null;
+    document.getElementById('applyImportButton').disabled = true;
+    document.getElementById('importPreview').innerHTML = '<div class="empty-state">Tipo alterado. Gere uma nova previa.</div>';
+  });
+
+  document.getElementById('previewImportButton').addEventListener('click', async () => {
     const message = document.getElementById('importMessage');
-    message.textContent = 'Importando...';
+    const preview = document.getElementById('importPreview');
+    message.style.color = 'var(--muted)';
+    message.textContent = 'Analisando arquivo...';
+    preview.innerHTML = '<div class="empty-state">Lendo dados e comparando com o Supabase...</div>';
+    document.getElementById('applyImportButton').disabled = true;
     try {
-      const data = await supabaseImportProducts({
+      currentImportPlan = await supabasePreviewImportProducts({
         tipo: document.getElementById('importType').value,
         texto: document.getElementById('importText').value
       });
+      preview.innerHTML = renderImportPreview(currentImportPlan);
       message.style.color = 'var(--success)';
-      message.textContent = 'Importacao aplicada: ' + JSON.stringify(data.summary || data.plan && data.plan.summary || {});
+      message.textContent = 'Previa pronta. Revise os dados antes de aplicar.';
+      document.getElementById('applyImportButton').disabled = false;
     } catch (error) {
+      currentImportPlan = null;
+      preview.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
       message.style.color = 'var(--accent)';
       message.textContent = error.message;
     }
   });
+
+  document.getElementById('applyImportButton').addEventListener('click', async () => {
+    const message = document.getElementById('importMessage');
+    const preview = document.getElementById('importPreview');
+    const button = document.getElementById('applyImportButton');
+    if (!currentImportPlan) {
+      message.style.color = 'var(--accent)';
+      message.textContent = 'Gere a previa antes de aplicar.';
+      return;
+    }
+    button.disabled = true;
+    message.style.color = 'var(--muted)';
+    message.textContent = 'Importando 0 de ' + currentImportPlan.validRows + ' produtos...';
+    try {
+      const data = await supabaseImportProducts({
+        tipo: document.getElementById('importType').value,
+        texto: document.getElementById('importText').value,
+        onProgress: (progress) => {
+          message.textContent = 'Importando ' + progress.done + ' de ' + progress.total + ' produtos...';
+        }
+      });
+      message.style.color = 'var(--success)';
+      message.textContent = 'Importacao aplicada com sucesso.';
+      preview.innerHTML = renderImportResult(data.summary);
+      currentImportPlan = null;
+    } catch (error) {
+      message.style.color = 'var(--accent)';
+      message.textContent = error.message;
+      button.disabled = false;
+    }
+  });
+}
+
+function renderImportPreview(plan) {
+  const invalid = plan.invalidRows.length
+    ? `<div class="import-warnings"><strong>${plan.invalidRows.length} linhas ignoradas</strong><span>${plan.invalidRows.slice(0, 5).map((row) => `Linha ${row.linha}: ${escapeHtml(row.motivo)}`).join(' | ')}</span></div>`
+    : '';
+  return `
+    <div class="import-summary">
+      <article><span>Linhas</span><strong>${plan.totalRows}</strong></article>
+      <article><span>Validas</span><strong>${plan.validRows}</strong></article>
+      <article><span>Novos</span><strong>${plan.newCount}</strong></article>
+      <article><span>Atualizacoes</span><strong>${plan.existingCount}</strong></article>
+      <article><span>Duplicados</span><strong>${plan.duplicates}</strong></article>
+    </div>
+    ${invalid}
+    ${renderImportTable(plan.preview)}
+  `;
+}
+
+function renderImportResult(summary) {
+  return `
+    <div class="import-summary">
+      <article><span>Recebidos</span><strong>${summary.total_recebido}</strong></article>
+      <article><span>Novos</span><strong>${summary.novos}</strong></article>
+      <article><span>Atualizados</span><strong>${summary.atualizados}</strong></article>
+      <article><span>Ignorados</span><strong>${summary.erros}</strong></article>
+    </div>
+  `;
+}
+
+function renderImportTable(products) {
+  if (!products.length) return '<div class="empty-state">Nenhum item para exibir.</div>';
+  return `
+    <div class="table-wrap import-table">
+      <table>
+        <thead><tr><th>Codigo</th><th>Descricao</th><th>Estoque</th><th>SP</th><th>PR</th><th>Marca</th></tr></thead>
+        <tbody>
+          ${products.map((product) => `
+            <tr>
+              <td>${escapeHtml(product.codigo)}</td>
+              <td>${escapeHtml(product.descricao)}</td>
+              <td>${escapeHtml(product.estoque)}</td>
+              <td>${product.preco_sp == null ? '' : money(product.preco_sp)}</td>
+              <td>${product.preco_pr == null ? '' : money(product.preco_pr)}</td>
+              <td>${escapeHtml(product.marca)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
 }

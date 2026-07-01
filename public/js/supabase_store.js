@@ -153,12 +153,8 @@ async function supabaseSaveUser(payload) {
 }
 
 async function supabaseImportProducts(payload) {
-  const tipo = payload.tipo || 'CATALOGO_PESQUISA';
-  const rows = parseDelimitedText(payload.texto || '');
-  if (!rows.length) throw new Error('Cole um CSV ou TSV com cabecalho.');
-
-  const mapped = rows.map((row) => mapImportProduct(row, tipo)).filter((product) => product.codigo);
-  if (!mapped.length) throw new Error('Nenhum produto valido encontrado na importacao.');
+  const plan = await supabasePreviewImportProducts(payload);
+  const mapped = plan.products;
 
   let novos = 0;
   let atualizados = 0;
@@ -176,26 +172,80 @@ async function supabaseImportProducts(payload) {
     });
   }
 
-  for (const chunk of chunkArray(mapped, 300)) {
+  const chunks = chunkArray(mapped, 300);
+  for (let index = 0; index < chunks.length; index += 1) {
     const { error } = await supabaseClient
       .from('products')
-      .upsert(chunk, { onConflict: 'codigo' });
+      .upsert(chunks[index], { onConflict: 'codigo' });
     if (error) throw error;
+    if (typeof payload.onProgress === 'function') {
+      payload.onProgress({
+        done: Math.min((index + 1) * 300, mapped.length),
+        total: mapped.length
+      });
+    }
   }
 
   const batch = {
     usuario: (getStoredSession() || {}).usuario || null,
-    tipo,
-    total_recebido: rows.length,
+    tipo: plan.tipo,
+    total_recebido: plan.totalRows,
     novos,
     atualizados,
-    sem_alteracao: 0,
-    erros: 0,
+    sem_alteracao: plan.duplicates,
+    erros: plan.invalidRows.length,
     status: 'APLICADO'
   };
   await supabaseClient.from('import_batches').insert(batch);
-  await supabaseLog('IMPORTAR_PRODUTOS', 'products', tipo, batch);
-  return { summary: batch };
+  await supabaseLog('IMPORTAR_PRODUTOS', 'products', plan.tipo, batch);
+  return { summary: batch, preview: plan.preview };
+}
+
+async function supabasePreviewImportProducts(payload) {
+  const tipo = payload.tipo || 'CATALOGO_PESQUISA';
+  const rows = parseDelimitedText(payload.texto || '');
+  if (!rows.length) throw new Error('Cole ou selecione um CSV/TSV com cabecalho.');
+
+  const seen = new Set();
+  const duplicateCodes = new Set();
+  const invalidRows = [];
+  const products = [];
+
+  rows.forEach((row, index) => {
+    const product = mapImportProduct(row, tipo);
+    if (!product.codigo) {
+      invalidRows.push({ linha: index + 2, motivo: 'Codigo ausente' });
+      return;
+    }
+    if (seen.has(product.codigo)) duplicateCodes.add(product.codigo);
+    seen.add(product.codigo);
+    products.push(product);
+  });
+
+  if (!products.length) throw new Error('Nenhum produto valido encontrado na importacao.');
+
+  const codes = products.map((product) => product.codigo);
+  let existingCount = 0;
+  for (const chunk of chunkArray(codes, 500)) {
+    const { data, error } = await supabaseClient
+      .from('products')
+      .select('codigo')
+      .in('codigo', chunk);
+    if (error) throw error;
+    existingCount += (data || []).length;
+  }
+
+  return {
+    tipo,
+    totalRows: rows.length,
+    validRows: products.length,
+    invalidRows,
+    duplicates: duplicateCodes.size,
+    existingCount,
+    newCount: Math.max(products.length - existingCount, 0),
+    preview: products.slice(0, 8),
+    products
+  };
 }
 
 async function supabaseLog(acao, entidade, idEntidade, dadosNovos) {
@@ -288,16 +338,14 @@ function normalizeProductCode(value) {
 
 function mapImportProduct(row, tipo) {
   const codigo = normalizeProductCode(pickImport(row, ['codigo', 'codigo ips', 'cod', 'cod.', 'sku']));
-  const base = {
-    codigo,
+  const estoque = pickImport(row, ['estoque', 'disp geral', 'disp. geral', 'disp venda', 'disp. venda', 'qtde']);
+  const base = { codigo };
+  const descriptive = {
     descricao: pickImport(row, ['descricao', 'descr']),
     marca: pickImport(row, ['marca']),
     aplicacao: pickImport(row, ['aplicacao']),
     ano: pickImport(row, ['ano']),
     ipi: importNumber(pickImport(row, ['ipi'])),
-    estoque: pickImport(row, ['estoque', 'disp geral', 'disp. geral', 'qtde']),
-    estoque_quantidade: importNumber(pickImport(row, ['estoque', 'disp geral', 'disp. geral', 'qtde'])),
-    status_estoque: pickImport(row, ['status estoque', 'status_estoque']),
     status_cadastro: pickImport(row, ['status cadastro', 'status_cadastro']),
     url_imagem: pickImport(row, ['url imagem', 'url_imagem', 'imagem']),
     grupo: pickImport(row, ['grupo']),
@@ -307,13 +355,27 @@ function mapImportProduct(row, tipo) {
     oem: pickImport(row, ['oem']),
     similar: pickImport(row, ['similar', 'similares'])
   };
+  const stock = {
+    estoque,
+    estoque_quantidade: importNumber(estoque),
+    status_estoque: pickImport(row, ['status estoque', 'status_estoque'])
+  };
   const price = importNumber(pickImport(row, ['preco', 'valor', 'prunitci', 'pr.unit.(c/i)', 'total c imp', 'total c/ imp', 'pr apos desc', 'pr.apos desc']));
-  if (tipo === 'PRECO_PR') base.preco_pr = price;
-  else if (tipo === 'PRECO_SP') base.preco_sp = price;
-  else {
-    base.preco_sp = importNumber(pickImport(row, ['preco sp', 'preco_sp'])) || price;
-    base.preco_pr = importNumber(pickImport(row, ['preco pr', 'preco_pr'])) || price;
+
+  if (tipo === 'PORTAL_ESTOQUE') {
+    Object.assign(base, stock);
+  } else if (tipo === 'PRECO_PR') {
+    if (price) base.preco_pr = price;
+  } else if (tipo === 'PRECO_SP') {
+    if (price) base.preco_sp = price;
+  } else {
+    Object.assign(base, descriptive, stock);
+    const precoSp = importNumber(pickImport(row, ['preco sp', 'preco_sp'])) || price;
+    const precoPr = importNumber(pickImport(row, ['preco pr', 'preco_pr'])) || price;
+    if (precoSp) base.preco_sp = precoSp;
+    if (precoPr) base.preco_pr = precoPr;
   }
+
   return Object.fromEntries(Object.entries(base).filter(([, value]) => value !== ''));
 }
 
