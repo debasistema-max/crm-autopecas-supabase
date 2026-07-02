@@ -428,6 +428,10 @@ td input {
   padding: 10px;
 }
 
+.sap-tab-panel[hidden] {
+  display: none;
+}
+
 .sap-tab-tools {
   display: flex;
   justify-content: space-between;
@@ -447,6 +451,45 @@ td input {
 .sap-checkbox input {
   width: auto;
   min-height: auto;
+}
+
+.sap-freight-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.7fr) minmax(300px, 0.72fr) minmax(420px, 1.2fr);
+  gap: 14px 20px;
+  align-items: end;
+  max-width: 1640px;
+}
+
+.sap-freight-grid label {
+  grid-template-columns: 1fr;
+  gap: 5px;
+  color: #050b11;
+  font-size: 12px;
+}
+
+.sap-freight-grid input,
+.sap-freight-grid select {
+  min-height: 31px;
+  border-radius: 0;
+  padding: 4px 8px;
+  background: #fff;
+  font-size: 14px;
+}
+
+.sap-search-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 46px;
+}
+
+.sap-search-button {
+  min-height: 31px;
+  border: 0;
+  background: #19a3b8;
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .sap-items-wrap {
@@ -820,6 +863,9 @@ button:disabled {
     grid-template-columns: minmax(120px, 180px) minmax(0, 1fr);
   }
   .sap-add-form {
+    grid-template-columns: 1fr;
+  }
+  .sap-freight-grid {
     grid-template-columns: 1fr;
   }
 }

@@ -35,7 +35,6 @@ async function renderOrders(container) {
               <label>Utilizacao principal<select id="orderUsage"><option>Revenda</option><option>Consumo</option></select></label>
               <label>Deposito<select id="orderRegion"><option value="SP">01 - MATRIZ - SP</option><option value="PR">02 - FILIAL - PR</option></select></label>
               <label>Endereco<input id="orderAddress" type="text"></label>
-              <label>Prazo<input id="orderTerm" type="text"></label>
             </div>
             <div class="sap-form-right">
               <label>Status SAP<input type="text" value="Aberto" readonly></label>
@@ -52,14 +51,10 @@ async function renderOrders(container) {
 
         <section class="sap-section sap-tabs-section">
           <div class="sap-tabs">
-            <button class="is-active" type="button">Itens</button>
-            <button type="button">Cliente</button>
-            <button type="button">Frete / Pagamento</button>
-            <button type="button">Observacoes</button>
-            <button type="button">Anexos</button>
-            <button type="button">Campos de usuario</button>
+            <button class="is-active" type="button" data-sap-tab="items">Itens</button>
+            <button type="button" data-sap-tab="freight">Frete / Pagamento</button>
           </div>
-          <div class="sap-tab-panel">
+          <div class="sap-tab-panel" data-sap-panel="items">
             <div class="sap-tab-tools">
               <label class="sap-checkbox"><input type="checkbox" checked> Simular impostos</label>
               <span id="cartCount">0 itens</span>
@@ -91,6 +86,43 @@ async function renderOrders(container) {
               <div class="sap-totals" id="cartTotals"></div>
             </div>
           </div>
+          <div class="sap-tab-panel" data-sap-panel="freight" hidden>
+            <div class="sap-freight-grid">
+              <label>Tipo de envio
+                <select id="orderShippingType">
+                  <option>PAGO DESTINATARIO</option>
+                  <option>PAGO REMETENTE</option>
+                  <option>RETIRA</option>
+                </select>
+              </label>
+              <label>Codigo transportadora
+                <span class="sap-search-field">
+                  <input id="orderCarrierSearch" type="search">
+                  <button class="sap-search-button" id="orderCarrierCodeSearchButton" type="button">...</button>
+                </span>
+              </label>
+              <label>Nome transportadora
+                <span class="sap-search-field">
+                  <input id="orderCarrier" type="text">
+                  <button class="sap-search-button" id="orderCarrierNameSearchButton" type="button">...</button>
+                </span>
+              </label>
+              <label>Cond. de pagamento
+                <select id="orderTerm">
+                  <option>30/40/50/60/70/80</option>
+                  <option>28/35/42</option>
+                  <option>30/60/90</option>
+                  <option>A vista</option>
+                </select>
+              </label>
+            </div>
+            <input id="orderCarrierCnpj" type="hidden">
+            <input id="orderCarrierAddress" type="hidden">
+            <input id="orderNotes" type="hidden">
+            <div id="orderCarrierResults" class="sap-search-results">
+              <div class="empty-state compact-state">Transportadoras cadastradas aparecem aqui.</div>
+            </div>
+          </div>
         </section>
       </div>
       <div class="sap-footer-actions">
@@ -101,6 +133,7 @@ async function renderOrders(container) {
     </section>
   `;
 
+  bindSapTabs(container);
   document.getElementById('orderCadastroSearchButton').addEventListener('click', searchCadastrosForOrder);
   document.getElementById('orderCadastroSearch').addEventListener('keydown', async (event) => {
     if (event.key === 'Enter') {
@@ -108,8 +141,15 @@ async function renderOrders(container) {
       await searchCadastrosForOrder();
     }
   });
-  document.getElementById('orderCarrierSearchButton').addEventListener('click', searchCarriersForOrder);
+  document.getElementById('orderCarrierCodeSearchButton').addEventListener('click', searchCarriersForOrder);
+  document.getElementById('orderCarrierNameSearchButton').addEventListener('click', searchCarriersForOrder);
   document.getElementById('orderCarrierSearch').addEventListener('keydown', async (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      await searchCarriersForOrder();
+    }
+  });
+  document.getElementById('orderCarrier').addEventListener('keydown', async (event) => {
     if (event.key === 'Enter') {
       event.preventDefault();
       await searchCarriersForOrder();
@@ -141,6 +181,22 @@ async function renderOrders(container) {
     document.getElementById('orderSearchResults').innerHTML = '<div class="empty-state compact-state">Pesquise para adicionar itens ao pedido.</div>';
   });
   renderCart();
+}
+
+function bindSapTabs(scope) {
+  const root = scope || document;
+  root.querySelectorAll('[data-sap-tab]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const tab = button.dataset.sapTab;
+      const tabRoot = button.closest('.sap-tabs-section');
+      tabRoot.querySelectorAll('[data-sap-tab]').forEach((item) => {
+        item.classList.toggle('is-active', item.dataset.sapTab === tab);
+      });
+      tabRoot.querySelectorAll('[data-sap-panel]').forEach((panel) => {
+        panel.hidden = panel.dataset.sapPanel !== tab;
+      });
+    });
+  });
 }
 
 function addProductToOrder(product) {
@@ -360,7 +416,8 @@ async function searchCarriersForOrder() {
   const target = document.getElementById('orderCarrierResults');
   target.innerHTML = '<div class="empty-state compact-state">Buscando transportadoras...</div>';
   try {
-    const rows = await supabaseSearchOrderCarriers(document.getElementById('orderCarrierSearch').value);
+    const term = document.getElementById('orderCarrierSearch').value || document.getElementById('orderCarrier').value;
+    const rows = await supabaseSearchOrderCarriers(term);
     target.innerHTML = renderOrderCarriersResults(rows);
     target.querySelectorAll('[data-use-carrier]').forEach((button) => {
       button.addEventListener('click', () => applyCarrierToOrder(rows[Number(button.dataset.useCarrier)]));

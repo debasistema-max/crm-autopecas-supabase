@@ -35,7 +35,6 @@ async function renderCreateQuotation(container) {
               <label>Utilizacao principal<select id="quoteUsage"><option>Revenda</option><option>Consumo</option></select></label>
               <label>Deposito<select id="quoteRegion"><option value="SP">01 - MATRIZ - SP</option><option value="PR">02 - FILIAL - PR</option></select></label>
               <label>Endereco<input id="quoteAddress" type="text"></label>
-              <label>Prazo<input id="quoteTerm" type="text"></label>
             </div>
             <div class="sap-form-right">
               <label>Status SAP<input type="text" value="Aberto" readonly></label>
@@ -52,14 +51,10 @@ async function renderCreateQuotation(container) {
 
         <section class="sap-section sap-tabs-section">
           <div class="sap-tabs">
-            <button class="is-active" type="button">Itens</button>
-            <button type="button">Cliente</button>
-            <button type="button">Frete / Pagamento</button>
-            <button type="button">Observacoes</button>
-            <button type="button">Anexos</button>
-            <button type="button">Campos de usuario</button>
+            <button class="is-active" type="button" data-sap-tab="items">Itens</button>
+            <button type="button" data-sap-tab="freight">Frete / Pagamento</button>
           </div>
-          <div class="sap-tab-panel">
+          <div class="sap-tab-panel" data-sap-panel="items">
             <div class="sap-tab-tools">
               <label class="sap-checkbox"><input type="checkbox" checked> Simular impostos</label>
               <span id="quoteCount">0 itens</span>
@@ -91,6 +86,43 @@ async function renderCreateQuotation(container) {
               <div class="sap-totals" id="quoteTotals"></div>
             </div>
           </div>
+          <div class="sap-tab-panel" data-sap-panel="freight" hidden>
+            <div class="sap-freight-grid">
+              <label>Tipo de envio
+                <select id="quoteShippingType">
+                  <option>PAGO DESTINATARIO</option>
+                  <option>PAGO REMETENTE</option>
+                  <option>RETIRA</option>
+                </select>
+              </label>
+              <label>Codigo transportadora
+                <span class="sap-search-field">
+                  <input id="quoteCarrierSearch" type="search">
+                  <button class="sap-search-button" id="quoteCarrierCodeSearchButton" type="button">...</button>
+                </span>
+              </label>
+              <label>Nome transportadora
+                <span class="sap-search-field">
+                  <input id="quoteCarrier" type="text">
+                  <button class="sap-search-button" id="quoteCarrierNameSearchButton" type="button">...</button>
+                </span>
+              </label>
+              <label>Cond. de pagamento
+                <select id="quoteTerm">
+                  <option>30/40/50/60/70/80</option>
+                  <option>28/35/42</option>
+                  <option>30/60/90</option>
+                  <option>A vista</option>
+                </select>
+              </label>
+            </div>
+            <input id="quoteCarrierCnpj" type="hidden">
+            <input id="quoteCarrierAddress" type="hidden">
+            <input id="quoteNotes" type="hidden">
+            <div id="quoteCarrierResults" class="sap-search-results">
+              <div class="empty-state compact-state">Transportadoras cadastradas aparecem aqui.</div>
+            </div>
+          </div>
         </section>
       </div>
       <div class="sap-footer-actions">
@@ -101,11 +133,26 @@ async function renderCreateQuotation(container) {
     </section>
   `;
 
+  bindSapTabs(container);
   document.getElementById('quoteClientSearchButton').addEventListener('click', searchClientsForQuote);
   document.getElementById('quoteClientSearch').addEventListener('keydown', async (event) => {
     if (event.key === 'Enter') {
       event.preventDefault();
       await searchClientsForQuote();
+    }
+  });
+  document.getElementById('quoteCarrierCodeSearchButton').addEventListener('click', searchCarriersForQuote);
+  document.getElementById('quoteCarrierNameSearchButton').addEventListener('click', searchCarriersForQuote);
+  document.getElementById('quoteCarrierSearch').addEventListener('keydown', async (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      await searchCarriersForQuote();
+    }
+  });
+  document.getElementById('quoteCarrier').addEventListener('keydown', async (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      await searchCarriersForQuote();
     }
   });
   document.getElementById('quoteProductSearch').addEventListener('submit', async (event) => {
@@ -250,6 +297,9 @@ async function saveCurrentQuote() {
       telefone: document.getElementById('quotePhone').value,
       endereco: document.getElementById('quoteAddress').value,
       prazo: document.getElementById('quoteTerm').value,
+      transportadora: document.getElementById('quoteCarrier').value,
+      transportadora_cnpj: document.getElementById('quoteCarrierCnpj').value,
+      transportadora_endereco: document.getElementById('quoteCarrierAddress').value,
       observacao: document.getElementById('quoteNotes').value,
       items: quoteItems
     };
@@ -310,6 +360,51 @@ function applyClientToQuote(row) {
   const message = document.getElementById('quoteMessage');
   message.style.color = 'var(--success)';
   message.textContent = 'Cliente carregado na cotacao.';
+}
+
+async function searchCarriersForQuote() {
+  const target = document.getElementById('quoteCarrierResults');
+  target.innerHTML = '<div class="empty-state compact-state">Buscando transportadoras...</div>';
+  try {
+    const term = document.getElementById('quoteCarrierSearch').value || document.getElementById('quoteCarrier').value;
+    const rows = await supabaseSearchOrderCarriers(term);
+    target.innerHTML = renderQuoteCarriersResults(rows);
+    target.querySelectorAll('[data-use-quote-carrier]').forEach((button) => {
+      button.addEventListener('click', () => applyCarrierToQuote(rows[Number(button.dataset.useQuoteCarrier)]));
+    });
+  } catch (error) {
+    target.innerHTML = `<div class="empty-state compact-state">${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function renderQuoteCarriersResults(rows) {
+  if (!rows.length) return '<div class="empty-state compact-state">Nenhuma transportadora encontrada.</div>';
+  return `
+    <div class="table-wrap compact-table">
+      <table>
+        <thead><tr><th>Transportadora</th><th>CNPJ</th><th>Cidade/UF</th><th></th></tr></thead>
+        <tbody>
+          ${rows.map((row, index) => `
+            <tr>
+              <td><strong>${escapeHtml(row.nome || '')}</strong><small>${escapeHtml(row.endereco || '')}</small></td>
+              <td>${escapeHtml(formatCnpj(row.cnpj || ''))}</td>
+              <td>${escapeHtml([row.cidade, row.estado].filter(Boolean).join('/'))}</td>
+              <td><button class="btn btn-secondary" type="button" data-use-quote-carrier="${index}">Usar</button></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function applyCarrierToQuote(row) {
+  document.getElementById('quoteCarrier').value = row.nome || '';
+  document.getElementById('quoteCarrierCnpj').value = formatCnpj(row.cnpj || '');
+  document.getElementById('quoteCarrierAddress').value = formatCarrierAddress(row);
+  const message = document.getElementById('quoteMessage');
+  message.style.color = 'var(--success)';
+  message.textContent = 'Transportadora carregada na cotacao.';
 }
 
 async function renderQuotationsReport(container) {
