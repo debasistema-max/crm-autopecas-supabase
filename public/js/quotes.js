@@ -33,7 +33,7 @@ async function renderCreateQuotation(container) {
               <label>No Ref.Cli.<input id="quoteClientRef" type="text"></label>
               <label>Vendedor<input id="quoteSellerDisplay" type="text" value="${escapeHtml((getStoredSession() || {}).nome || '')}"></label>
               <label>Utilizacao principal<select id="quoteUsage"><option>Revenda</option><option>Consumo</option></select></label>
-              <label>Deposito<select id="quoteRegion"><option value="SP">01 - MATRIZ - SP</option><option value="PR">02 - FILIAL - PR</option></select></label>
+              <label>Deposito<select id="quoteRegion"><option value="SP">02 - FILIAL - SP</option><option value="PR">01 - MATRIZ - PR</option></select></label>
               <label>Endereco<input id="quoteAddress" type="text"></label>
             </div>
             <div class="sap-form-right">
