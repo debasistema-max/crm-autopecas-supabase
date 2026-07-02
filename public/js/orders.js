@@ -308,10 +308,6 @@ function renderSapTotals(subtotal, discount, total) {
     <div><span>Sub-total:</span><strong>${money(subtotal)}</strong></div>
     <div><span>Desconto:</span><strong>${money(discount)}</strong></div>
     <div><span>Sub-total c/desc.:</span><strong>${money(total)}</strong></div>
-    <div><span>Total ICMS-ST:</span><strong>${money(0)}</strong></div>
-    <div><span>Total IPI:</span><strong>${money(0)}</strong></div>
-    <div><span>Total Desonerado:</span><strong>${money(0)}</strong></div>
-    <div><span>Desp.Adicionais totais:</span><strong>${money(0)}</strong></div>
     <div class="sap-grand-total"><span>Total geral:</span><strong>${money(total)}</strong></div>
   `;
 }
