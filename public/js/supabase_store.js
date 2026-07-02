@@ -55,20 +55,60 @@ async function supabaseSessionFromProfile(user, profile) {
 async function supabaseGetDashboard() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const [{ data: orders, error: ordersError }, { count: missingCount, error: missingError }, { count: zeroCount, error: zeroError }] = await Promise.all([
+  const [
+    { data: orders, error: ordersError },
+    { data: orderSummaryRows, error: orderSummaryError },
+    { data: quotationSummaryRows, error: quotationSummaryError },
+    { count: missingCount, error: missingError },
+    { count: zeroCount, error: zeroError }
+  ] = await Promise.all([
     supabaseClient.from('orders').select('numero_pedido, cliente, vendedor, status, total, created_at').order('created_at', { ascending: false }).limit(8),
+    supabaseClient.from('orders').select('status, total, created_at').limit(10000),
+    supabaseClient.from('quotations').select('status, total, created_at').limit(10000),
     supabaseClient.from('products').select('codigo', { count: 'exact', head: true }).eq('status_cadastro', 'NAO_CADASTRADO'),
     supabaseClient.from('products').select('codigo', { count: 'exact', head: true }).lte('estoque_quantidade', 0)
   ]);
-  if (ordersError || missingError || zeroError) throw ordersError || missingError || zeroError;
+  if (ordersError || orderSummaryError || quotationSummaryError || missingError || zeroError) {
+    throw ordersError || orderSummaryError || quotationSummaryError || missingError || zeroError;
+  }
   const pedidosHoje = (orders || []).filter((order) => new Date(order.created_at) >= today);
   return {
     pedidosHoje: pedidosHoje.length,
     totalHoje: pedidosHoje.reduce((sum, order) => sum + Number(order.total || 0), 0),
     ultimosPedidos: orders || [],
+    resumoPedidos: buildDocumentStatusSummary(orderSummaryRows || [], {
+      aberto: ['NOVO', 'EM_ANALISE'],
+      efetivado: ['APROVADO', 'FATURADO'],
+      cancelado: ['CANCELADO']
+    }),
+    resumoCotacoes: buildDocumentStatusSummary(quotationSummaryRows || [], {
+      aberto: ['NOVA', 'ENVIADA'],
+      efetivado: ['APROVADA', 'CONVERTIDA'],
+      cancelado: ['CANCELADA']
+    }),
     produtosSemCadastro: missingCount || 0,
     estoqueZerado: zeroCount || 0
   };
+}
+
+function buildDocumentStatusSummary(rows, groups) {
+  const summary = {
+    total: { count: 0, value: 0 },
+    aberto: { count: 0, value: 0 },
+    efetivado: { count: 0, value: 0 },
+    cancelado: { count: 0, value: 0 }
+  };
+  (rows || []).forEach((row) => {
+    const value = Number(row.total || 0);
+    summary.total.count += 1;
+    summary.total.value += value;
+    Object.entries(groups).forEach(([key, statuses]) => {
+      if (!statuses.includes(row.status)) return;
+      summary[key].count += 1;
+      summary[key].value += value;
+    });
+  });
+  return summary;
 }
 
 async function supabaseSearchProducts(params) {
