@@ -72,7 +72,7 @@ async function supabaseGetDashboard() {
 }
 
 async function supabaseSearchProducts(params) {
-  if (params.listaGeral || params.grupo || params.linha) {
+  if (params.context === 'produtos' || params.listaGeral || params.grupo || params.linha) {
     return supabaseListProducts(params);
   }
   const { data, error } = await supabaseClient.rpc('search_products', {
@@ -103,7 +103,7 @@ async function supabaseListProducts(params = {}) {
   const limit = Math.min(Math.max(Number(params.limite || 1000), 1), 5000);
   let query = supabaseClient
     .from('products')
-    .select('codigo, descricao, marca, aplicacao, ano, estoque, estoque_quantidade, preco_sp, preco_pr, grupo, categoria, montadora, oem, similar')
+    .select('codigo, descricao, marca, aplicacao, ano, estoque, estoque_quantidade, preco_sp, preco_pr, grupo, categoria, montadora, detalhes, oem, similar')
     .order('codigo', { ascending: true })
     .limit(limit);
 
@@ -602,6 +602,10 @@ function suggestImportField(header, tipo) {
     marca: 'marca',
     aplicacao: 'aplicacao',
     aplica: 'aplicacao',
+    veiculo: 'aplicacao',
+    veiculos: 'aplicacao',
+    veiculoaplicacao: 'aplicacao',
+    veiculosaplicacao: 'aplicacao',
     ano: 'ano',
     ipi: 'ipi',
     precosimp: 'preco_sem_imposto',
@@ -614,6 +618,8 @@ function suggestImportField(header, tipo) {
     qtd: 'estoque',
     qtde: 'estoque',
     grupo: 'grupo',
+    linha: 'categoria',
+    linhas: 'categoria',
     categoria: 'categoria',
     montadora: 'montadora',
     oem: 'oem',
@@ -698,7 +704,7 @@ function mapImportProduct(row, tipo) {
     status_cadastro: pickImport(row, ['status cadastro', 'status_cadastro']),
     url_imagem: pickImport(row, ['url imagem', 'url_imagem', 'imagem']),
     grupo: pickImport(row, ['grupo']),
-    categoria: pickImport(row, ['categoria']),
+    categoria: pickImport(row, ['categoria', 'linha']),
     montadora: pickImport(row, ['montadora']),
     detalhes: pickImport(row, ['detalhes', 'palavras chave', 'palavras-chave']),
     oem: pickImport(row, ['oem']),

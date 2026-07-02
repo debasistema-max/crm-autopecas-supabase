@@ -446,11 +446,11 @@ function getImportTemplate(type) {
     CATALOGO_PESQUISA: {
       title: 'Catalogo de pesquisa',
       required: ['codigo'],
-      optional: ['descricao', 'marca', 'aplicacao', 'ano', 'grupo', 'categoria', 'montadora', 'detalhes', 'oem', 'similar'],
-      sample: 'codigo;descricao;marca;aplicacao;ano;grupo;categoria;montadora;similar\n7146505811;BOMBA DIR.HIDRAULICA;FIAT;PALIO E-TORQ;11/20;DIRECAO;BOMBA;FIAT;7146505810',
+      optional: ['linha', 'grupo', 'veiculos', 'detalhes', 'similares'],
+      sample: 'CODIGO;LINHA;GRUPO;VEICULOS;DETALHES;SIMILARES\n7146505811;DIRECAO;BOMBA;PALIO E-TORQ 11/20;BOMBA DIR.HIDRAULICA;7146505810',
       notes: [
-        'Enriquece a busca por descricao, aplicacao, montadora, OEM e similares.',
-        'Nao precisa conter estoque ou preco.'
+        'Enriquece a busca e a listagem de produtos com linha, grupo, veiculos, detalhes e similares.',
+        'Nao altera estoque nem valor. Esses campos continuam vindo das importacoes de estoque e preco.'
       ]
     },
     CRISTIANO: {

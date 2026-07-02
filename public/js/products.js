@@ -76,20 +76,27 @@ async function searchProductsInto(target, params, onAdd) {
       target.innerHTML = '<div class="empty-state">Nenhum produto encontrado.</div>';
       return;
     }
-    const showGroupColumns = !onAdd;
+    const showCatalogColumns = !onAdd;
     target.innerHTML = `
       ${renderProductListHeader(products, params, onAdd)}
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Codigo</th><th>Descricao</th><th>Marca</th><th>Aplicacao</th>${showGroupColumns ? '<th>Linha</th><th>Grupo</th>' : ''}<th>Estoque</th><th>Preco</th>${onAdd ? '<th></th>' : ''}</tr></thead>
+          <thead><tr>${showCatalogColumns ? '<th>Codigo</th><th>Linha</th><th>Grupo</th><th>Veiculos</th><th>Detalhes</th><th>Similares</th>' : '<th>Codigo</th><th>Descricao</th><th>Marca</th><th>Aplicacao</th>'}<th>Estoque</th><th>Preco</th>${onAdd ? '<th></th>' : ''}</tr></thead>
           <tbody>
             ${products.map((p, index) => `
               <tr>
                 <td>${escapeHtml(p.codigo)}</td>
-                <td>${escapeHtml(p.descricao)}</td>
-                <td>${escapeHtml(p.marca)}</td>
-                <td>${escapeHtml(p.aplicacao)}</td>
-                ${showGroupColumns ? `<td>${escapeHtml(p.linha || p.categoria)}</td><td>${escapeHtml(p.grupo)}</td>` : ''}
+                ${showCatalogColumns ? `
+                  <td>${escapeHtml(p.linha || p.categoria)}</td>
+                  <td>${escapeHtml(p.grupo)}</td>
+                  <td>${escapeHtml(p.aplicacao)}</td>
+                  <td>${escapeHtml(p.detalhes || p.descricao)}</td>
+                  <td>${escapeHtml(p.similar)}</td>
+                ` : `
+                  <td>${escapeHtml(p.descricao)}</td>
+                  <td>${escapeHtml(p.marca)}</td>
+                  <td>${escapeHtml(p.aplicacao)}</td>
+                `}
                 <td>${escapeHtml(p.estoque)}</td>
                 <td>${money(p.preco)}</td>
                 ${onAdd ? `<td><button class="btn btn-secondary" type="button" data-add-product="${index}">Adicionar</button></td>` : ''}
@@ -147,12 +154,14 @@ function renderProductListHeader(products, params, onAdd) {
 }
 
 function exportProductsCsv(products, params) {
-  const headers = ['codigo', 'descricao', 'marca', 'aplicacao', 'linha', 'grupo', 'estoque', 'preco'];
+  const headers = ['codigo', 'linha', 'grupo', 'veiculos', 'detalhes', 'similares', 'estoque', 'preco'];
   const lines = [
     headers.join(';'),
     ...products.map((product) => headers.map((field) => {
       if (field === 'preco') return csvCell(product.preco);
       if (field === 'linha') return csvCell(product.linha || product.categoria);
+      if (field === 'veiculos') return csvCell(product.aplicacao);
+      if (field === 'similares') return csvCell(product.similar);
       return csvCell(product[field]);
     }).join(';'))
   ];
