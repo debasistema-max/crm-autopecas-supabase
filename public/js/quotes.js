@@ -724,9 +724,9 @@ function renderDocumentReport(kind, rows) {
               <td>${escapeHtml(row.cliente || '')}<small>${escapeHtml(formatCnpj(row.cnpj || ''))}</small></td>
               <td>${escapeHtml(row.codigo_sap_cliente || '')}</td>
               <td>${escapeHtml(row.vendedor || '')}</td>
-              <td><span class="status-pill">${escapeHtml(row.status || '')}</span></td>
+              <td><span class="status-pill">${escapeHtml(formatDocumentStatus(kind, row.status))}</span></td>
               <td>${money(row.total)}</td>
-              <td><button class="btn btn-secondary" type="button" data-edit-document="${index}">Editar</button></td>
+              <td><button class="btn btn-secondary" type="button" data-edit-document="${index}">Abrir</button></td>
             </tr>
           `).join('')}
         </tbody>
@@ -745,38 +745,103 @@ function showDocumentEditForm(kind, row) {
   const panel = document.getElementById(`${kind}EditPanel`);
   const numberKey = kind === 'pedidos' ? 'numero_pedido' : 'numero_cotacao';
   const itemsKey = kind === 'pedidos' ? 'order_items' : 'quotation_items';
+  const title = kind === 'pedidos' ? 'Pedido de venda' : 'Cotacao de venda';
+  const dateLabel = kind === 'pedidos' ? 'Dt.Pedido' : 'Dt.Cotacao';
+  const regionValue = row.regiao === 'PR' ? '01 - MATRIZ - PR' : '02 - FILIAL - SP';
   window[`${kind}EditingItems`] = normalizeDocumentItems(row[itemsKey] || []);
   panel.hidden = false;
   panel.innerHTML = `
-    <div class="panel-header">
-      <div>
-        <h2>Editar itens ${escapeHtml(row[numberKey] || '')}</h2>
-        <p>${escapeHtml(row.cliente || '')} | ${escapeHtml(formatCnpj(row.cnpj || ''))}</p>
+    <section class="sap-document">
+      <div class="sap-titlebar">
+        <div class="sap-title"><span class="sap-title-icon">#</span><h2>${title}</h2></div>
+        <strong>No. ${escapeHtml(row[numberKey] || '')}</strong>
       </div>
-    </div>
-    <form id="${kind}EditForm" class="field-grid">
-      <input id="${kind}EditId" type="hidden" value="${escapeHtml(row.id || '')}">
-      <div class="span-12 document-edit-summary">
-        <strong>Cliente travado</strong>
-        <span>${escapeHtml(row.codigo_sap_cliente || '')} ${escapeHtml(row.cliente || '')}</span>
+      <div class="sap-window">
+        <section class="sap-section">
+          <h3>Dados gerais</h3>
+          <div class="sap-form-grid">
+            <div class="sap-form-left">
+              <label>Filial<input type="text" value="(MA/PR) International Parts Service do Brasil Ltda" readonly></label>
+              <div class="sap-inline-fields">
+                <label>Cliente | CPF/CNPJ
+                  <input type="text" value="${escapeHtml(row.codigo_sap_cliente || '')}" readonly>
+                </label>
+                <label>
+                  <input type="text" value="${escapeHtml(formatCnpj(row.cnpj || ''))}" readonly>
+                </label>
+              </div>
+              <label>Nome cliente<input type="text" value="${escapeHtml(row.cliente || '')}" readonly></label>
+              <label>Pessoa de contato<input type="text" value="${escapeHtml(row.telefone || '')}" readonly></label>
+              <label>No Ref.Cli.<input type="text" value="" readonly></label>
+              <label>Vendedor<input type="text" value="${escapeHtml(row.vendedor || '')}" readonly></label>
+              <label>Utilizacao principal<input type="text" value="Revenda" readonly></label>
+              <label>Deposito<input type="text" value="${escapeHtml(regionValue)}" readonly></label>
+              <label>Endereco<input type="text" value="${escapeHtml(row.endereco || '')}" readonly></label>
+            </div>
+            <div class="sap-form-right">
+              <label>Status SAP<input type="text" id="${kind}EditStatusDisplay" value="${escapeHtml(formatDocumentStatus(kind, row.status))}" readonly></label>
+              <label>${dateLabel}<input type="text" value="${escapeHtml(formatDateTime(row.created_at || row.data_hora))}" readonly></label>
+              <label>Valido ate<input type="text" value="" readonly></label>
+              <label>Autorizacao SAP<input type="text" value="${escapeHtml(formatDocumentStatus(kind, row.status))}" readonly></label>
+              <label>Autorizacao portal<input type="text" value="Sem status" readonly></label>
+            </div>
+          </div>
+        </section>
+        <section class="sap-section sap-tabs-section">
+          <div class="sap-tabs">
+            <button class="is-active" type="button" data-sap-tab="edit-items">Itens</button>
+            <button type="button" data-sap-tab="edit-freight">Frete / Pagamento</button>
+          </div>
+          <div class="sap-tab-panel" data-sap-panel="edit-items">
+            <div class="sap-tab-tools">
+              <label class="sap-checkbox"><input type="checkbox" checked disabled> Simular impostos</label>
+              <span id="${kind}EditCount">0 itens</span>
+            </div>
+            <div id="${kind}EditItems" class="sap-items-wrap"></div>
+            <div class="sap-bottom-grid">
+              <div class="sap-add-item">
+                <div class="sap-add-form">
+                  <label>Cod.Item / EAN
+                    <input id="${kind}EditProductTerm" type="search">
+                  </label>
+                  <label>Nome item
+                    <input id="${kind}EditProductNamePreview" type="text">
+                  </label>
+                  <label>Grupo
+                    <input id="${kind}EditProductGroupPreview" type="text" readonly>
+                  </label>
+                  <div class="actions-row sap-item-search-actions">
+                    <button class="btn btn-primary" id="${kind}EditProductSearchButton" type="button">Buscar</button>
+                  </div>
+                </div>
+                <div id="${kind}EditProductResults" class="sap-product-results">
+                  <div class="empty-state compact-state">Pesquise para adicionar novos itens.</div>
+                </div>
+              </div>
+              <div class="sap-totals" id="${kind}EditTotals"></div>
+            </div>
+          </div>
+          <div class="sap-tab-panel" data-sap-panel="edit-freight" hidden>
+            <div class="sap-freight-grid">
+              <label>Tipo de envio<input type="text" value="PAGO DESTINATARIO" readonly></label>
+              <label>Codigo transportadora<input type="text" value="${escapeHtml(row.transportadora_cnpj || '')}" readonly></label>
+              <label>Nome transportadora<input type="text" value="${escapeHtml(row.transportadora || '')}" readonly></label>
+              <label>Cond. de pagamento<input type="text" value="${escapeHtml(row.prazo || '')}" readonly></label>
+            </div>
+          </div>
+        </section>
       </div>
-      <label class="span-8">Adicionar produto
-        <input id="${kind}EditProductTerm" type="search" placeholder="Codigo, descricao, aplicacao ou similar">
-      </label>
-      <div class="span-4 actions-row align-end">
-        <button class="btn btn-secondary" id="${kind}EditProductSearchButton" type="button">Pesquisar item</button>
-      </div>
-      <div class="span-12" id="${kind}EditProductResults">
-        <div class="empty-state compact-state">Pesquise para adicionar novos itens.</div>
-      </div>
-      <div class="span-12" id="${kind}EditItems"></div>
-      <div class="span-12 actions-row">
-        <button class="btn btn-primary" type="submit">Salvar itens</button>
-        <button class="btn btn-ghost" id="${kind}EditCancel" type="button">Cancelar</button>
+      <div class="sap-footer-actions">
+        <input id="${kind}EditId" type="hidden" value="${escapeHtml(row.id || '')}">
+        <button class="btn btn-primary" id="${kind}EditSaveButton" type="button">Salvar itens</button>
+        <button class="btn btn-secondary" id="${kind}EditConfirmButton" type="button">${kind === 'pedidos' ? 'Efetivar pedido' : 'Efetivar cotacao'}</button>
+        <button class="btn btn-ghost" id="${kind}EditCancelDocumentButton" type="button">${kind === 'pedidos' ? 'Cancelar pedido' : 'Cancelar cotacao'}</button>
+        <button class="btn btn-ghost" id="${kind}EditCloseButton" type="button">Fechar</button>
         <p id="${kind}EditMessage" class="form-message"></p>
       </div>
-    </form>
+    </section>
   `;
+  bindSapTabs(panel);
   renderDocumentEditItems(kind);
   const searchButton = document.getElementById(`${kind}EditProductSearchButton`);
   const searchInput = document.getElementById(`${kind}EditProductTerm`);
@@ -787,8 +852,10 @@ function showDocumentEditForm(kind, row) {
       searchProductsForDocumentEdit(kind, row.regiao || 'SP');
     }
   });
-  document.getElementById(`${kind}EditForm`).addEventListener('submit', (event) => saveDocumentEdit(event, kind));
-  document.getElementById(`${kind}EditCancel`).addEventListener('click', () => {
+  document.getElementById(`${kind}EditSaveButton`).addEventListener('click', () => saveDocumentEdit(kind));
+  document.getElementById(`${kind}EditConfirmButton`).addEventListener('click', () => updateDocumentStatus(kind, row.id, getDocumentConfirmedStatus(kind)));
+  document.getElementById(`${kind}EditCancelDocumentButton`).addEventListener('click', () => updateDocumentStatus(kind, row.id, getDocumentCanceledStatus(kind)));
+  document.getElementById(`${kind}EditCloseButton`).addEventListener('click', () => {
     panel.hidden = true;
     panel.innerHTML = '';
   });
@@ -812,37 +879,19 @@ function normalizeDocumentItems(items) {
 
 function renderDocumentEditItems(kind) {
   const target = document.getElementById(`${kind}EditItems`);
+  const count = document.getElementById(`${kind}EditCount`);
+  const totals = document.getElementById(`${kind}EditTotals`);
   const items = window[`${kind}EditingItems`] || [];
+  if (count) count.textContent = items.length + (items.length === 1 ? ' item' : ' itens');
   if (!items.length) {
-    target.innerHTML = '<div class="empty-state">Nenhum item no documento.</div>';
+    target.innerHTML = renderDocumentSapItemsTable(kind, []);
+    if (totals) totals.innerHTML = renderSapTotals(0, 0, 0);
     return;
   }
   const subtotal = items.reduce((sum, item) => sum + Number(item.preco || 0) * Number(item.quantidade || 0), 0);
   const total = items.reduce((sum, item) => sum + Number(item.preco || 0) * Number(item.quantidade || 0) * (1 - Number(item.desconto_percentual || 0) / 100), 0);
-  target.innerHTML = `
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Codigo</th><th>Qtd</th><th>Desc. %</th><th>Unitario</th><th>Total</th><th></th></tr></thead>
-        <tbody>
-          ${items.map((item, index) => `
-            <tr>
-              <td>${escapeHtml(item.codigo || '')}<br><small>${escapeHtml(item.descricao || '')}</small></td>
-              <td><input type="number" min="1" value="${escapeHtml(item.quantidade)}" data-document-edit-qty="${index}"></td>
-              <td><input type="number" min="0" step="0.01" value="${escapeHtml(item.desconto_percentual)}" data-document-edit-discount="${index}"></td>
-              <td>${money(item.preco)}</td>
-              <td>${money(item.preco * item.quantidade * (1 - item.desconto_percentual / 100))}</td>
-              <td><button class="btn btn-ghost" type="button" data-document-edit-remove="${index}">Remover</button></td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-    </div>
-    <div class="totals">
-      <div><span>Subtotal</span><span>${money(subtotal)}</span></div>
-      <div><span>Desconto</span><span>${money(subtotal - total)}</span></div>
-      <div><strong>Total</strong><strong>${money(total)}</strong></div>
-    </div>
-  `;
+  target.innerHTML = renderDocumentSapItemsTable(kind, items);
+  if (totals) totals.innerHTML = renderSapTotals(subtotal, subtotal - total, total);
   target.querySelectorAll('[data-document-edit-qty]').forEach((input) => {
     input.addEventListener('change', () => {
       items[Number(input.dataset.documentEditQty)].quantidade = Math.max(1, Number(input.value || 1));
@@ -861,6 +910,49 @@ function renderDocumentEditItems(kind) {
       renderDocumentEditItems(kind);
     });
   });
+}
+
+function renderDocumentSapItemsTable(kind, items) {
+  const totalQty = items.reduce((sum, item) => sum + Number(item.quantidade || 0), 0);
+  const subtotal = items.reduce((sum, item) => sum + Number(item.preco || 0) * Number(item.quantidade || 0), 0);
+  const total = items.reduce((sum, item) => sum + Number(item.preco || 0) * Number(item.quantidade || 0) * (1 - Number(item.desconto_percentual || 0) / 100), 0);
+  const rows = items.length ? items.map((item, index) => {
+    const finalUnit = Number(item.preco || 0) * (1 - Number(item.desconto_percentual || 0) / 100);
+    const rowTotal = finalUnit * Number(item.quantidade || 0);
+    return `
+      <tr>
+        <td>${index + 1}</td>
+        <td class="sap-code">${escapeHtml(item.codigo || '')}</td>
+        <td>${escapeHtml(item.descricao || '')}</td>
+        <td>${escapeHtml(item.marca || '')}</td>
+        <td>${escapeHtml(item.aplicacao || '')}</td>
+        <td>UN</td>
+        <td><input type="number" min="1" value="${escapeHtml(item.quantidade)}" data-document-edit-qty="${index}"></td>
+        <td>${money(item.preco)}</td>
+        <td><input type="number" min="0" step="0.01" value="${escapeHtml(item.desconto_percentual)}" data-document-edit-discount="${index}"></td>
+        <td>${money(finalUnit)}</td>
+        <td>${money(rowTotal)}</td>
+        <td>${money(rowTotal)}</td>
+        <td><button class="sap-remove-button" type="button" data-document-edit-remove="${index}" title="Remover">-</button></td>
+      </tr>
+    `;
+  }).join('') : '<tr><td colspan="13" class="sap-empty-row">Nenhum item no documento.</td></tr>';
+  return `
+    <table class="sap-items-table">
+      <thead>
+        <tr>
+          <th>#</th><th>Cod.</th><th>Descricao</th><th>Marca</th><th>Aplicacao</th><th>UM</th><th>Qtde</th>
+          <th>Pr.Unit.</th><th>% do desc.</th><th>Pr.Apos Desc.</th><th>Total Apos Desc.</th><th>Total c/ Imp.</th><th></th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+      <tfoot>
+        <tr>
+          <td colspan="6">Totais:</td><td>${totalQty}</td><td></td><td></td><td></td><td>${money(total)}</td><td>${money(subtotal)}</td><td></td>
+        </tr>
+      </tfoot>
+    </table>
+  `;
 }
 
 async function searchProductsForDocumentEdit(kind, regiao) {
@@ -888,11 +980,14 @@ function addProductToDocumentEdit(kind, product) {
     });
   }
   window[`${kind}EditingItems`] = items;
+  const namePreview = document.getElementById(`${kind}EditProductNamePreview`);
+  const groupPreview = document.getElementById(`${kind}EditProductGroupPreview`);
+  if (namePreview) namePreview.value = product.descricao || '';
+  if (groupPreview) groupPreview.value = product.grupo || product.linha || product.categoria || '';
   renderDocumentEditItems(kind);
 }
 
-async function saveDocumentEdit(event, kind) {
-  event.preventDefault();
+async function saveDocumentEdit(kind) {
   const message = document.getElementById(`${kind}EditMessage`);
   message.style.color = 'var(--muted)';
   message.textContent = 'Salvando alteracoes...';
@@ -908,6 +1003,25 @@ async function saveDocumentEdit(event, kind) {
     }
     message.style.color = 'var(--success)';
     message.textContent = 'Alteracoes salvas.';
+    await loadDocumentReport(kind);
+  } catch (error) {
+    message.style.color = 'var(--accent)';
+    message.textContent = error.message;
+  }
+}
+
+async function updateDocumentStatus(kind, id, status) {
+  const message = document.getElementById(`${kind}EditMessage`);
+  message.style.color = 'var(--muted)';
+  message.textContent = 'Atualizando status...';
+  try {
+    const data = kind === 'pedidos'
+      ? await supabaseUpdateOrderStatus({ id, status })
+      : await supabaseUpdateQuotationStatus({ id, status });
+    const display = document.getElementById(`${kind}EditStatusDisplay`);
+    if (display) display.value = formatDocumentStatus(kind, data.status || status);
+    message.style.color = 'var(--success)';
+    message.textContent = 'Status atualizado para ' + formatDocumentStatus(kind, data.status || status) + '.';
     await loadDocumentReport(kind);
   } catch (error) {
     message.style.color = 'var(--accent)';
@@ -949,4 +1063,28 @@ function documentStatusOptions(kind) {
   return kind === 'pedidos'
     ? ['NOVO', 'EM_ANALISE', 'APROVADO', 'CANCELADO', 'FATURADO']
     : ['NOVA', 'ENVIADA', 'APROVADA', 'CANCELADA', 'CONVERTIDA'];
+}
+
+function getDocumentConfirmedStatus(kind) {
+  return kind === 'pedidos' ? 'APROVADO' : 'APROVADA';
+}
+
+function getDocumentCanceledStatus(kind) {
+  return kind === 'pedidos' ? 'CANCELADO' : 'CANCELADA';
+}
+
+function formatDocumentStatus(kind, status) {
+  const labels = {
+    NOVO: 'Aberto',
+    NOVA: 'Aberta',
+    EM_ANALISE: 'Em analise',
+    ENVIADA: 'Enviada',
+    APROVADO: 'Efetivado',
+    APROVADA: 'Efetivada',
+    CANCELADO: 'Cancelado',
+    CANCELADA: 'Cancelada',
+    FATURADO: 'Faturado',
+    CONVERTIDA: 'Convertida'
+  };
+  return labels[status] || status || (kind === 'pedidos' ? 'Aberto' : 'Aberta');
 }

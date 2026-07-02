@@ -211,6 +211,34 @@ async function supabaseUpdateQuotationReport(payload = {}) {
   return data || {};
 }
 
+async function supabaseUpdateOrderStatus(payload = {}) {
+  if (!payload.id) throw new Error('Pedido nao informado.');
+  if (!payload.status) throw new Error('Status nao informado.');
+  const { data, error } = await supabaseClient
+    .from('orders')
+    .update({ status: payload.status })
+    .eq('id', payload.id)
+    .select('id, numero_pedido, status')
+    .single();
+  if (error) throw error;
+  await supabaseLog('ATUALIZAR_STATUS_PEDIDO', 'orders', payload.id, payload);
+  return data || {};
+}
+
+async function supabaseUpdateQuotationStatus(payload = {}) {
+  if (!payload.id) throw new Error('Cotacao nao informada.');
+  if (!payload.status) throw new Error('Status nao informado.');
+  const { data, error } = await supabaseClient
+    .from('quotations')
+    .update({ status: payload.status })
+    .eq('id', payload.id)
+    .select('id, numero_cotacao, status')
+    .single();
+  if (error) throw error;
+  await supabaseLog('ATUALIZAR_STATUS_COTACAO', 'quotations', payload.id, payload);
+  return data || {};
+}
+
 function sanitizeDocumentItemsUpdate(payload = {}) {
   if (!payload.id) throw new Error('Registro nao informado.');
   const items = Array.isArray(payload.items) ? payload.items : [];
