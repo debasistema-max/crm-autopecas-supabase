@@ -1,128 +1,28 @@
-create or replace function public.touch_updated_at()
-returns trigger
-language plpgsql
-as $$
-begin
-  new.updated_at = now();
-  return new;
-end;
-$$;
+alter table public.cadastros_clientes
+  add column if not exists codigo_sap_cliente text;
 
-create trigger profiles_touch_updated_at
-before update on public.profiles
-for each row execute function public.touch_updated_at();
+create index if not exists cadastros_clientes_codigo_sap_idx
+  on public.cadastros_clientes (codigo_sap_cliente);
 
-create trigger orders_touch_updated_at
-before update on public.orders
-for each row execute function public.touch_updated_at();
+alter table public.orders
+  add column if not exists codigo_sap_cliente text;
 
-create trigger clients_touch_updated_at
-before update on public.clients
-for each row execute function public.touch_updated_at();
+create index if not exists orders_codigo_sap_cliente_idx
+  on public.orders (codigo_sap_cliente);
 
-create or replace function public.current_profile()
-returns public.profiles
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select * from public.profiles where id = auth.uid() and ativo = true limit 1
-$$;
-
-create or replace function public.has_module(module_name text)
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1
-    from public.profiles p
-    join public.role_permissions rp on rp.perfil = p.perfil
-    where p.id = auth.uid()
-      and p.ativo = true
-      and rp.modulo = module_name
-      and rp.permitido = true
+drop policy if exists cadastros_clientes_crm_read on public.cadastros_clientes;
+create policy cadastros_clientes_crm_read
+on public.cadastros_clientes
+for select
+to authenticated
+using (
+  public.has_module('cadastros')
+  or public.is_admin()
+  or (
+    public.has_module('novo_pedido')
+    and status in ('Aprovado', 'Finalizado SAP')
   )
-$$;
-
-create or replace function public.is_admin()
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1 from public.profiles
-    where id = auth.uid() and ativo = true and perfil = 'ADMIN'
-  )
-$$;
-
-create or replace function public.max_discount_percent()
-returns numeric
-language sql
-stable
-as $$
-  select coalesce((value->>'maxDiscountPercent')::numeric, 10)
-  from public.settings
-  where key = 'commercial'
-$$;
-
-create or replace function public.search_products(term text, region text default 'SP', only_available boolean default false, limit_count integer default 40)
-returns table (
-  codigo text,
-  descricao text,
-  marca text,
-  aplicacao text,
-  ano text,
-  estoque text,
-  preco numeric,
-  preco_sp numeric,
-  preco_pr numeric,
-  status_estoque text,
-  status_cadastro text,
-  url_imagem text,
-  grupo text,
-  categoria text,
-  montadora text,
-  similar text
-)
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select
-    p.codigo,
-    p.descricao,
-    p.marca,
-    p.aplicacao,
-    p.ano,
-    p.estoque,
-    case when upper(region) = 'PR' then p.preco_pr else p.preco_sp end as preco,
-    p.preco_sp,
-    p.preco_pr,
-    p.status_estoque,
-    p.status_cadastro,
-    p.url_imagem,
-    p.grupo,
-    p.categoria,
-    p.montadora,
-    p.similar
-  from public.products p
-  where public.has_module('produtos')
-    and (not only_available or p.estoque_quantidade > 0)
-    and (
-      lower(unaccent(coalesce(term, ''))) = ''
-      or p.search_vector @@ plainto_tsquery('simple', lower(unaccent(term)))
-      or p.search_text like '%' || lower(unaccent(term)) || '%'
-    )
-  order by similarity(p.search_text, lower(unaccent(coalesce(term, '')))) desc, p.codigo
-  limit least(greatest(limit_count, 1), 100);
-$$;
+);
 
 create or replace function public.create_order(payload jsonb)
 returns jsonb
@@ -235,17 +135,3 @@ begin
   );
 end;
 $$;
-
-alter table public.profiles enable row level security;
-alter table public.role_permissions enable row level security;
-alter table public.settings enable row level security;
-alter table public.products enable row level security;
-alter table public.carriers enable row level security;
-alter table public.payment_terms enable row level security;
-alter table public.clients enable row level security;
-alter table public.orders enable row level security;
-alter table public.order_items enable row level security;
-alter table public.import_batches enable row level security;
-alter table public.import_changes enable row level security;
-alter table public.logs enable row level security;
-

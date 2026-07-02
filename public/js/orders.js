@@ -7,13 +7,23 @@ async function renderOrders(container) {
       <section>
         <section class="panel">
           <div class="panel-header">
-            <div><h2>Gerar pedido</h2><p>O pedido comeca vazio. Pesquise produtos para adicionar itens.</p></div>
+            <div><h2>Gerar pedido</h2><p>Escolha um cadastro aprovado ou preencha o cliente manualmente.</p></div>
           </div>
           <div class="field-grid">
+            <label class="span-8">Cadastro recebido
+              <input id="orderCadastroSearch" type="search" placeholder="Buscar por codigo SAP, CNPJ, protocolo ou empresa">
+            </label>
+            <div class="span-4 actions-row align-end">
+              <button class="btn btn-secondary" id="orderCadastroSearchButton" type="button">Buscar cadastro</button>
+            </div>
+            <div class="span-12" id="orderCadastroResults">
+              <div class="empty-state compact-state">Cadastros aprovados aparecem aqui para preencher o pedido.</div>
+            </div>
             <label class="span-3">Estado
               <select id="orderRegion"><option>SP</option><option>PR</option></select>
             </label>
-            <label class="span-5">Cliente<input id="orderClient" type="text"></label>
+            <label class="span-3">Codigo SAP cliente<input id="orderClientSapCode" type="text"></label>
+            <label class="span-6">Cliente<input id="orderClient" type="text"></label>
             <label class="span-4">CNPJ<input id="orderCnpj" type="text"></label>
             <label class="span-4">Telefone<input id="orderPhone" type="text"></label>
             <label class="span-8">Endereco<input id="orderAddress" type="text"></label>
@@ -47,6 +57,14 @@ async function renderOrders(container) {
       </aside>
     </div>
   `;
+
+  document.getElementById('orderCadastroSearchButton').addEventListener('click', searchCadastrosForOrder);
+  document.getElementById('orderCadastroSearch').addEventListener('keydown', async (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      await searchCadastrosForOrder();
+    }
+  });
 
   document.getElementById('orderProductSearch').addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -146,6 +164,7 @@ async function saveCurrentOrder() {
     const payload = {
       sessionId: getSessionId(),
       regiao: document.getElementById('orderRegion').value,
+      codigo_sap_cliente: document.getElementById('orderClientSapCode').value,
       cliente: document.getElementById('orderClient').value,
       cnpj: document.getElementById('orderCnpj').value,
       telefone: document.getElementById('orderPhone').value,
@@ -173,8 +192,78 @@ async function saveCurrentOrder() {
   }
 }
 
+async function searchCadastrosForOrder() {
+  const target = document.getElementById('orderCadastroResults');
+  target.innerHTML = '<div class="empty-state compact-state">Buscando cadastros aprovados...</div>';
+  try {
+    const rows = await supabaseSearchCadastrosClientesForOrder(document.getElementById('orderCadastroSearch').value);
+    target.innerHTML = renderOrderCadastrosResults(rows);
+    target.querySelectorAll('[data-use-cadastro]').forEach((button) => {
+      button.addEventListener('click', () => applyCadastroToOrder(rows[Number(button.dataset.useCadastro)]));
+    });
+  } catch (error) {
+    target.innerHTML = `<div class="empty-state compact-state">${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function renderOrderCadastrosResults(rows) {
+  if (!rows.length) return '<div class="empty-state compact-state">Nenhum cadastro aprovado encontrado.</div>';
+  return `
+    <div class="table-wrap compact-table">
+      <table>
+        <thead>
+          <tr>
+            <th>Empresa</th>
+            <th>CNPJ</th>
+            <th>Codigo SAP</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((row, index) => `
+            <tr>
+              <td>
+                <strong>${escapeHtml(row.razao_social || row.nome_fantasia || '')}</strong>
+                <small>${escapeHtml([row.protocolo, row.cidade, row.estado].filter(Boolean).join(' | '))}</small>
+              </td>
+              <td>${escapeHtml(formatCnpj(row.cnpj || ''))}</td>
+              <td>${escapeHtml(row.codigo_sap_cliente || '')}</td>
+              <td>${escapeHtml(row.status || '')}</td>
+              <td><button class="btn btn-secondary" type="button" data-use-cadastro="${index}">Usar</button></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function applyCadastroToOrder(row) {
+  document.getElementById('orderClientSapCode').value = row.codigo_sap_cliente || '';
+  document.getElementById('orderClient').value = row.razao_social || row.nome_fantasia || '';
+  document.getElementById('orderCnpj').value = formatCnpj(row.cnpj || '');
+  document.getElementById('orderPhone').value = row.whatsapp || row.telefone || '';
+  document.getElementById('orderAddress').value = formatCadastroAddress(row);
+  document.getElementById('orderTerm').value = row.prazo_desejado || '';
+  document.getElementById('orderCarrier').value = row.transportadora || '';
+  const message = document.getElementById('orderMessage');
+  message.style.color = 'var(--success)';
+  message.textContent = 'Cadastro ' + (row.protocolo || '') + ' carregado no pedido.';
+}
+
+function formatCadastroAddress(row) {
+  return [
+    [row.endereco, row.numero].filter(Boolean).join(', '),
+    row.bairro,
+    row.complemento,
+    [row.cidade, row.estado].filter(Boolean).join('/')
+  ].filter(Boolean).join(' - ');
+}
+
 async function renderSapImport(container) {
   let currentImportPlan = null;
+  let importAnalyzeTimer = null;
   container.innerHTML = `
     <section class="panel">
       <div class="panel-header">
@@ -200,6 +289,8 @@ async function renderSapImport(container) {
       <div class="actions-row">
         <button class="btn btn-primary" id="previewImportButton" type="button">Verificar dados</button>
         <button class="btn btn-secondary" id="applyImportButton" type="button" disabled>Importar</button>
+        <button class="btn btn-ghost" id="saveImportTemplateButton" type="button">Salvar padrão</button>
+        <button class="btn btn-ghost" id="resetImportTemplateButton" type="button">Resetar modelo</button>
         <button class="btn btn-ghost" id="clearImportButton" type="button">Limpar</button>
         <p id="importMessage" class="form-message"></p>
       </div>
@@ -217,7 +308,7 @@ async function renderSapImport(container) {
       </details>
     </section>
     <section class="panel" id="importPreview">
-      <div class="empty-state">Clique em Verificar dados antes de importar.</div>
+      <div class="empty-state">Envie um arquivo ou cole uma tabela para analisar automaticamente.</div>
     </section>
   `;
 
@@ -234,8 +325,8 @@ async function renderSapImport(container) {
       document.getElementById('importText').value = getImportTemplate(document.getElementById('importType').value).sample;
       currentImportPlan = null;
       document.getElementById('applyImportButton').disabled = true;
-      document.getElementById('importPreview').innerHTML = '<div class="empty-state">Modelo carregado. Clique em Verificar dados.</div>';
-      refreshImportMapping();
+      document.getElementById('importPreview').innerHTML = '<div class="empty-state">Modelo carregado. Analisando automaticamente...</div>';
+      analyzeImportAutomatically({ detectType: false });
     });
   };
   refreshImportTemplate();
@@ -253,20 +344,85 @@ async function renderSapImport(container) {
     }
   };
 
+  const analyzeImportAutomatically = async ({ detectType = false, forceTemplate = false, reason = 'auto' } = {}) => {
+    const text = document.getElementById('importText').value.trim();
+    const message = document.getElementById('importMessage');
+    const preview = document.getElementById('importPreview');
+    const applyButton = document.getElementById('applyImportButton');
+    if (!text) return;
+    currentImportPlan = null;
+    applyButton.disabled = true;
+    message.style.color = 'var(--muted)';
+    message.textContent = reason === 'file' ? 'Arquivo recebido. Analisando colunas...' : 'Analisando tabela...';
+    preview.innerHTML = '<div class="empty-state">Organizando a planilha para importacao...</div>';
+    try {
+      const analysis = getImportAutoAnalysis(text, document.getElementById('importType').value);
+      if (detectType && analysis.suggestedType) {
+        document.getElementById('importType').value = analysis.suggestedType;
+        refreshImportTemplate();
+      }
+      const typedAnalysis = getImportColumnPlan(text, document.getElementById('importType').value);
+      const templateMatch = applySavedImportTemplate(
+        typedAnalysis,
+        loadImportMappingTemplate(document.getElementById('importType').value),
+        forceTemplate
+      );
+      const finalAnalysis = templateMatch.useTemplate ? templateMatch.analysis : typedAnalysis;
+      document.getElementById('importMapping').innerHTML = renderImportMapping(finalAnalysis, templateMatch);
+      currentImportPlan = await supabasePreviewImportProducts({
+        tipo: document.getElementById('importType').value,
+        texto: text,
+        mapping: getCurrentImportMapping()
+      });
+      preview.innerHTML = renderImportPreview(currentImportPlan, { automatic: true, templateMatch });
+      message.style.color = 'var(--success)';
+      message.textContent = templateMatch.useTemplate
+        ? 'Modelo aprendido aplicado. Confira a previa e clique em Importar.'
+        : 'Analise pronta. Confira a previa reorganizada e clique em Importar.';
+      applyButton.disabled = false;
+    } catch (error) {
+      currentImportPlan = null;
+      preview.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+      message.style.color = 'var(--accent)';
+      message.textContent = error.message;
+    }
+  };
+
+  const scheduleImportAnalysis = () => {
+    window.clearTimeout(importAnalyzeTimer);
+    importAnalyzeTimer = window.setTimeout(() => analyzeImportAutomatically({ detectType: true }), 800);
+  };
+
+  const previewWithCurrentMapping = async ({ automatic = false, messageText = 'Dados verificados. Pode importar.' } = {}) => {
+    const message = document.getElementById('importMessage');
+    const preview = document.getElementById('importPreview');
+    const applyButton = document.getElementById('applyImportButton');
+    const text = document.getElementById('importText').value;
+    currentImportPlan = await supabasePreviewImportProducts({
+      tipo: document.getElementById('importType').value,
+      texto: text,
+      mapping: getCurrentImportMapping()
+    });
+    preview.innerHTML = renderImportPreview(currentImportPlan, { automatic });
+    message.style.color = 'var(--success)';
+    message.textContent = messageText;
+    applyButton.disabled = false;
+  };
+
   document.getElementById('importFile').addEventListener('change', async (event) => {
     const file = event.target.files && event.target.files[0];
     if (!file) return;
     document.getElementById('importText').value = await file.text();
     currentImportPlan = null;
     document.getElementById('applyImportButton').disabled = true;
-    document.getElementById('importPreview').innerHTML = '<div class="empty-state">Arquivo carregado. Clique em Verificar dados.</div>';
-    refreshImportMapping();
+    await analyzeImportAutomatically({ detectType: true, reason: 'file' });
   });
 
   document.getElementById('importText').addEventListener('input', () => {
     currentImportPlan = null;
     document.getElementById('applyImportButton').disabled = true;
-    document.getElementById('importPreview').innerHTML = '<div class="empty-state">Clique em Verificar dados antes de importar.</div>';
+    document.getElementById('importPreview').innerHTML = '<div class="empty-state">Aguardando a analise automatica...</div>';
+    scheduleImportAnalysis();
   });
 
   document.getElementById('importType').addEventListener('change', () => {
@@ -274,7 +430,67 @@ async function renderSapImport(container) {
     document.getElementById('applyImportButton').disabled = true;
     refreshImportTemplate();
     refreshImportMapping();
-    document.getElementById('importPreview').innerHTML = '<div class="empty-state">Tipo alterado. Clique em Verificar dados.</div>';
+    document.getElementById('importPreview').innerHTML = '<div class="empty-state">Tipo alterado. Recalculando previa...</div>';
+    scheduleImportAnalysis();
+  });
+
+  document.getElementById('importMapping').addEventListener('change', (event) => {
+    if (!event.target.matches('[data-import-map]')) return;
+    currentImportPlan = null;
+    document.getElementById('applyImportButton').disabled = true;
+    document.getElementById('importPreview').innerHTML = '<div class="empty-state">Mapeamento alterado. Reorganizando previa...</div>';
+    window.clearTimeout(importAnalyzeTimer);
+    importAnalyzeTimer = window.setTimeout(async () => {
+      try {
+        await previewWithCurrentMapping({
+          automatic: true,
+          messageText: 'Mapeamento manual aplicado. Salve como novo padrao se quiser reutilizar.'
+        });
+      } catch (error) {
+        currentImportPlan = null;
+        document.getElementById('importPreview').innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+        document.getElementById('importMessage').style.color = 'var(--accent)';
+        document.getElementById('importMessage').textContent = error.message;
+      }
+    }, 300);
+  });
+
+  document.getElementById('importPreview').addEventListener('click', async (event) => {
+    const action = event.target.dataset.importTemplateAction;
+    if (!action) return;
+    if (action === 'review') {
+      document.getElementById('importMappingDetails').open = true;
+      document.getElementById('importMappingDetails').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    if (action === 'use') {
+      await analyzeImportAutomatically({ detectType: false, forceTemplate: true, reason: 'template' });
+      return;
+    }
+    if (action === 'reset') {
+      resetImportMappingTemplate(document.getElementById('importType').value);
+      await analyzeImportAutomatically({ detectType: false, reason: 'reset' });
+    }
+  });
+
+  document.getElementById('saveImportTemplateButton').addEventListener('click', () => {
+    const message = document.getElementById('importMessage');
+    try {
+      const template = saveCurrentImportMappingTemplate();
+      message.style.color = 'var(--success)';
+      message.textContent = 'Modelo salvo para ' + getImportTypeLabel(template.tipo) + '.';
+    } catch (error) {
+      message.style.color = 'var(--accent)';
+      message.textContent = error.message;
+    }
+  });
+
+  document.getElementById('resetImportTemplateButton').addEventListener('click', async () => {
+    const message = document.getElementById('importMessage');
+    resetImportMappingTemplate(document.getElementById('importType').value);
+    message.style.color = 'var(--success)';
+    message.textContent = 'Modelo desta importacao resetado.';
+    await analyzeImportAutomatically({ detectType: false, reason: 'reset' });
   });
 
   document.getElementById('clearImportButton').addEventListener('click', () => {
@@ -284,32 +500,28 @@ async function renderSapImport(container) {
     document.getElementById('applyImportButton').disabled = true;
     document.getElementById('importMessage').textContent = '';
     document.getElementById('importMapping').innerHTML = '<div class="empty-state">Cole ou selecione um arquivo para mapear as colunas.</div>';
-    document.getElementById('importPreview').innerHTML = '<div class="empty-state">Clique em Verificar dados antes de importar.</div>';
+    document.getElementById('importPreview').innerHTML = '<div class="empty-state">Envie um arquivo ou cole uma tabela para analisar automaticamente.</div>';
   });
 
   document.getElementById('previewImportButton').addEventListener('click', async () => {
     const message = document.getElementById('importMessage');
     const preview = document.getElementById('importPreview');
+    const previewButton = document.getElementById('previewImportButton');
     message.style.color = 'var(--muted)';
     message.textContent = 'Verificando dados...';
     preview.innerHTML = '<div class="empty-state">Lendo dados e comparando com o Supabase...</div>';
     document.getElementById('applyImportButton').disabled = true;
+    previewButton.disabled = true;
     try {
       if (!document.querySelector('[data-import-map]')) refreshImportMapping();
-      currentImportPlan = await supabasePreviewImportProducts({
-        tipo: document.getElementById('importType').value,
-        texto: document.getElementById('importText').value,
-        mapping: getCurrentImportMapping()
-      });
-      preview.innerHTML = renderImportPreview(currentImportPlan);
-      message.style.color = 'var(--success)';
-      message.textContent = 'Dados verificados. Pode importar.';
-      document.getElementById('applyImportButton').disabled = false;
+      await previewWithCurrentMapping();
     } catch (error) {
       currentImportPlan = null;
       preview.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
       message.style.color = 'var(--accent)';
       message.textContent = error.message;
+    } finally {
+      previewButton.disabled = false;
     }
   });
 
@@ -326,12 +538,15 @@ async function renderSapImport(container) {
     message.style.color = 'var(--muted)';
     message.textContent = 'Importando 0 de ' + currentImportPlan.validRows + ' produtos...';
     try {
+      const file = document.getElementById('importFile').files && document.getElementById('importFile').files[0];
+      saveCurrentImportMappingTemplate();
       const data = await supabaseImportProducts({
         tipo: document.getElementById('importType').value,
         texto: document.getElementById('importText').value,
+        fileName: file ? file.name : null,
         mapping: getCurrentImportMapping(),
         onProgress: (progress) => {
-          message.textContent = 'Importando ' + progress.done + ' de ' + progress.total + ' produtos...';
+          message.textContent = 'Importando lote ' + progress.batch + ' de ' + progress.batches + ' - ' + progress.done + ' de ' + progress.total + ' produtos...';
         }
       });
       message.style.color = 'var(--success)';
@@ -370,12 +585,114 @@ function getImportFieldOptions() {
   ];
 }
 
-function renderImportMapping(plan) {
+function getImportTemplateType(type) {
+  return normalizeImportType(type || 'CRISTIANO');
+}
+
+function getImportTypeLabel(type) {
+  const labels = {
+    CADASTRO_COMPLETO: 'Cadastro produtos',
+    PORTAL_ESTOQUE: 'Estoque',
+    PRECO_SP: 'Preco SP',
+    PRECO_PR: 'Preco PR',
+    CATALOGO_PESQUISA: 'Catalogo pesquisa'
+  };
+  return labels[getImportTemplateType(type)] || type;
+}
+
+function getImportTemplateStorageKey(type) {
+  return 'import_mapping_template_' + getImportTemplateType(type);
+}
+
+function loadImportMappingTemplate(type) {
+  try {
+    const raw = localStorage.getItem(getImportTemplateStorageKey(type));
+    return raw ? JSON.parse(raw) : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function resetImportMappingTemplate(type) {
+  localStorage.removeItem(getImportTemplateStorageKey(type));
+}
+
+function saveImportMappingTemplate(type, headers, mapping) {
+  const template = {
+    tipo: getImportTemplateType(type),
+    headers: headers.slice(),
+    normalizedHeaders: headers.map(normalizeHeader),
+    mapping: Object.assign({}, mapping),
+    updatedAt: new Date().toISOString()
+  };
+  localStorage.setItem(getImportTemplateStorageKey(type), JSON.stringify(template));
+  return template;
+}
+
+function saveCurrentImportMappingTemplate() {
+  const text = document.getElementById('importText').value.trim();
+  if (!text) throw new Error('Cole ou selecione uma planilha antes de salvar o modelo.');
+  const type = document.getElementById('importType').value;
+  const plan = getImportColumnPlan(text, type);
+  const mapping = getCurrentImportMapping();
+  if (!Object.values(mapping).includes('codigo')) {
+    throw new Error('O modelo precisa ter uma coluna mapeada como Codigo.');
+  }
+  return saveImportMappingTemplate(type, plan.headers, mapping);
+}
+
+function applySavedImportTemplate(plan, template, force = false) {
+  const empty = {
+    hasTemplate: false,
+    useTemplate: false,
+    compatible: false,
+    similarity: 0,
+    changed: false,
+    analysis: plan,
+    template: null
+  };
+  if (!template || !template.normalizedHeaders || !template.mapping) return empty;
+
+  const currentNormalized = plan.headers.map(normalizeHeader);
+  const savedSet = new Set(template.normalizedHeaders);
+  const matchedHeaders = currentNormalized.filter((header) => savedSet.has(header));
+  const similarity = currentNormalized.length ? matchedHeaders.length / currentNormalized.length : 0;
+  const savedMappingByNormalized = {};
+  template.headers.forEach((header) => {
+    savedMappingByNormalized[normalizeHeader(header)] = template.mapping[header] || '';
+  });
+  const savedMappingByIndex = template.headers.map((header) => template.mapping[header] || '');
+
+  const mapped = {};
+  plan.headers.forEach((header, index) => {
+    const normalized = normalizeHeader(header);
+    mapped[header] = savedMappingByNormalized[normalized] || (force ? savedMappingByIndex[index] : '') || plan.mapping[header] || '';
+  });
+
+  const hasCodigo = Object.values(mapped).includes('codigo');
+  const compatible = hasCodigo && similarity >= 0.5;
+  const useTemplate = force || compatible;
+  return {
+    hasTemplate: true,
+    useTemplate,
+    compatible,
+    similarity,
+    changed: !compatible,
+    analysis: Object.assign({}, plan, { mapping: useTemplate ? mapped : plan.mapping }),
+    template
+  };
+}
+
+function renderImportMapping(plan, templateMatch = null) {
   if (!plan.headers.length) return '<div class="empty-state">Nenhum cabecalho encontrado.</div>';
+  const templateInfo = templateMatch && templateMatch.hasTemplate
+    ? `<p class="mapping-note">${templateMatch.useTemplate ? 'Modelo aprendido aplicado.' : 'Modelo salvo encontrado, mas a estrutura mudou.'} Compatibilidade: ${Math.round(templateMatch.similarity * 100)}%.</p>`
+    : '<p class="mapping-note">Nenhum modelo salvo para este tipo. Ajuste uma vez e salve como padrao.</p>';
   return `
     <div class="panel-header">
       <div><h2>Mapeamento de colunas</h2><p>Confirme para onde cada coluna da sua tabela deve ir.</p></div>
     </div>
+    ${templateInfo}
     <div class="mapping-grid">
       ${plan.headers.map((header) => renderMappingRow(header, plan.mapping[header], plan.sampleRows)).join('')}
     </div>
@@ -496,12 +813,31 @@ function renderImportTemplate(type) {
   `;
 }
 
-function renderImportPreview(plan) {
+function renderImportPreview(plan, options = {}) {
   const invalid = plan.invalidRows.length
     ? `<div class="import-warnings"><strong>${plan.invalidRows.length} linhas ignoradas</strong><span>${plan.invalidRows.slice(0, 5).map((row) => `Linha ${row.linha}: ${escapeHtml(row.motivo)}`).join(' | ')}</span></div>`
     : '';
   const duplicates = plan.duplicates
-    ? `<div class="import-warnings"><strong>${plan.duplicates} codigos repetidos</strong><span>Quando o mesmo codigo aparece mais de uma vez, sera importada a ultima linha encontrada.</span></div>`
+    ? `<div class="import-warnings"><strong>${plan.duplicates} codigos repetidos</strong><span>O sistema junta as linhas do mesmo codigo: o ultimo valor preenchido vence e campos vazios nao apagam dados anteriores. ${escapeHtml((plan.duplicateCodes || []).slice(0, 8).join(', '))}</span></div>`
+    : '';
+  const fields = plan.fieldsUpdated && plan.fieldsUpdated.length
+    ? `<div class="import-warnings"><strong>Campos atualizados</strong><span>${plan.fieldsUpdated.map(escapeHtml).join(', ')}</span></div>`
+    : '';
+  const auto = options.automatic
+    ? '<div class="import-warnings"><strong>Planilha reorganizada</strong><span>As colunas foram convertidas para o formato interno do CRM. Confira a amostra abaixo antes de importar.</span></div>'
+    : '';
+  const templateAlert = options.templateMatch && options.templateMatch.hasTemplate && options.templateMatch.changed
+    ? `
+      <div class="import-template-alert">
+        <strong>A estrutura desta planilha parece diferente do modelo salvo. Deseja revisar o mapeamento?</strong>
+        <span>Compatibilidade com o modelo: ${Math.round(options.templateMatch.similarity * 100)}%.</span>
+        <div class="actions-row">
+          <button class="btn btn-secondary" type="button" data-import-template-action="review">Revisar mapeamento</button>
+          <button class="btn btn-primary" type="button" data-import-template-action="use">Usar mesmo assim</button>
+          <button class="btn btn-ghost" type="button" data-import-template-action="reset">Resetar modelo</button>
+        </div>
+      </div>
+    `
     : '';
   return `
     <div class="import-summary">
@@ -512,6 +848,9 @@ function renderImportPreview(plan) {
       <article><span>Atualizacoes</span><strong>${plan.existingCount}</strong></article>
       <article><span>Duplicados</span><strong>${plan.duplicates}</strong></article>
     </div>
+    ${templateAlert}
+    ${auto}
+    ${fields}
     ${duplicates}
     ${invalid}
     ${renderImportTable(plan.preview)}

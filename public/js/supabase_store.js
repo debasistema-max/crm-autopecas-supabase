@@ -165,13 +165,13 @@ async function supabaseGetLogs(filters) {
 async function supabaseListCadastrosClientes(filters = {}) {
   let query = supabaseClient
     .from('cadastros_clientes')
-    .select('id, protocolo, status, cnpj, razao_social, nome_fantasia, telefone, whatsapp, email_compras, cidade, estado, segmento, situacao_cadastral, cnae, possui_regime_especial, descricao_regime, observacoes, observacoes_internas, created_at')
+    .select('id, protocolo, status, codigo_sap_cliente, cnpj, razao_social, nome_fantasia, ie, telefone, whatsapp, email_compras, cidade, estado, endereco, numero, bairro, complemento, segmento, transportadora, prazo_desejado, vendedor, situacao_cadastral, cnae, possui_regime_especial, descricao_regime, observacoes, observacoes_internas, created_at')
     .order('created_at', { ascending: false })
     .limit(150);
   if (filters.status) query = query.eq('status', filters.status);
   if (filters.termo) {
-    const term = `%${filters.termo}%`;
-    query = query.or(`protocolo.ilike.${term},cnpj.ilike.${term},razao_social.ilike.${term},nome_fantasia.ilike.${term},cidade.ilike.${term}`);
+    const term = `%${escapePostgrestFilter(filters.termo)}%`;
+    query = query.or(`protocolo.ilike.${term},codigo_sap_cliente.ilike.${term},cnpj.ilike.${term},razao_social.ilike.${term},nome_fantasia.ilike.${term},cidade.ilike.${term}`);
   }
   const { data, error } = await query;
   if (error) throw error;
@@ -181,17 +181,44 @@ async function supabaseListCadastrosClientes(filters = {}) {
 async function supabaseUpdateCadastroCliente(payload) {
   const updates = {
     status: payload.status,
+    codigo_sap_cliente: String(payload.codigo_sap_cliente || '').trim() || null,
     observacoes_internas: payload.observacoes_internas || null
   };
   const { data, error } = await supabaseClient
     .from('cadastros_clientes')
     .update(updates)
     .eq('id', payload.id)
-    .select('id, protocolo, status, observacoes_internas')
+    .select('id, protocolo, status, codigo_sap_cliente, observacoes_internas')
     .single();
   if (error) throw error;
   await supabaseLog('ATUALIZAR_CADASTRO_CLIENTE', 'cadastros_clientes', payload.id, updates);
   return data;
+}
+
+async function supabaseSearchCadastrosClientesForOrder(term = '') {
+  const search = String(term || '').trim();
+  let query = supabaseClient
+    .from('cadastros_clientes')
+    .select('id, protocolo, status, codigo_sap_cliente, cnpj, razao_social, nome_fantasia, telefone, whatsapp, email_compras, cidade, estado, endereco, numero, bairro, complemento, transportadora, prazo_desejado, vendedor, created_at')
+    .in('status', ['Aprovado', 'Finalizado SAP'])
+    .order('created_at', { ascending: false })
+    .limit(30);
+
+  if (search) {
+    const pattern = `%${escapePostgrestFilter(search)}%`;
+    query = query.or([
+      `protocolo.ilike.${pattern}`,
+      `codigo_sap_cliente.ilike.${pattern}`,
+      `cnpj.ilike.${pattern}`,
+      `razao_social.ilike.${pattern}`,
+      `nome_fantasia.ilike.${pattern}`,
+      `cidade.ilike.${pattern}`
+    ].join(','));
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
 }
 
 async function supabaseListUsers() {

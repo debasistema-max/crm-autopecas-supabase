@@ -189,6 +189,22 @@ th {
   text-transform: uppercase;
 }
 
+td small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+td textarea {
+  min-width: 220px;
+  min-height: 64px;
+}
+
+td input {
+  min-width: 140px;
+}
+
 .actions-row {
   display: flex;
   flex-wrap: wrap;
@@ -270,6 +286,22 @@ th {
   font-size: 13px;
 }
 
+.import-template-alert {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid #d43d2c;
+  border-radius: var(--radius);
+  background: #fff0ed;
+  color: #842014;
+  font-size: 13px;
+}
+
+.import-template-alert .actions-row {
+  margin-top: 2px;
+}
+
 .import-format {
   display: grid;
   grid-template-columns: minmax(0, 240px) minmax(0, 1fr);
@@ -347,6 +379,12 @@ th {
   gap: 10px;
 }
 
+.mapping-note {
+  margin: -4px 0 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .mapping-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(160px, 220px);
@@ -378,6 +416,19 @@ th {
 
 .import-table table {
   min-width: 640px;
+}
+
+.compact-state {
+  padding: 12px;
+}
+
+.compact-table table {
+  min-width: 620px;
+}
+
+.compact-table th,
+.compact-table td {
+  padding: 8px 10px;
 }
 
 button:disabled {

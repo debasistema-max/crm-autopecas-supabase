@@ -109,6 +109,7 @@ create table public.orders (
   regiao public.order_region not null default 'SP',
   user_id uuid references public.profiles(id),
   vendedor text,
+  codigo_sap_cliente text,
   cliente text not null,
   cnpj text,
   telefone text,

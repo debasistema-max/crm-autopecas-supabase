@@ -3,6 +3,7 @@ const MODULES = {
   products: { title: 'Produtos', permission: 'produtos', render: renderProducts },
   orders: { title: 'Gerar Pedido', permission: 'novo_pedido', render: renderOrders },
   sap: { title: 'Importacao SAP', permission: 'alimentacao', render: renderSapImport },
+  cadastros: { title: 'Cadastros', permission: 'cadastros', render: renderCadastrosClientes },
   users: { title: 'Usuarios', permission: 'usuarios', render: renderUsers },
   logs: { title: 'Logs', permission: 'logs', render: renderLogs }
 };

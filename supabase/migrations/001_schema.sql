@@ -97,6 +97,7 @@ create table public.orders (
   regiao public.order_region not null default 'SP',
   user_id uuid references public.profiles(id),
   vendedor text,
+  codigo_sap_cliente text,
   cliente text not null,
   cnpj text,
   telefone text,
@@ -365,7 +366,7 @@ begin
   where numero_pedido ~ '^[0-9]+$';
 
   insert into public.orders (
-    numero_pedido, regiao, user_id, vendedor, cliente, cnpj, telefone, endereco,
+    numero_pedido, regiao, user_id, vendedor, codigo_sap_cliente, cliente, cnpj, telefone, endereco,
     prazo, transportadora, transportadora_cnpj, transportadora_endereco, observacao, status
   )
   values (
@@ -373,6 +374,7 @@ begin
     coalesce((payload->>'regiao')::public.order_region, 'SP'),
     session_profile.id,
     session_profile.nome,
+    nullif(payload->>'codigo_sap_cliente', ''),
     payload->>'cliente',
     payload->>'cnpj',
     payload->>'telefone',
