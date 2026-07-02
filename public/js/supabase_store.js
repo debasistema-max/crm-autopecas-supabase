@@ -72,6 +72,9 @@ async function supabaseGetDashboard() {
 }
 
 async function supabaseSearchProducts(params) {
+  if (params.listaGeral || params.grupo || params.linha) {
+    return supabaseListProducts(params);
+  }
   const { data, error } = await supabaseClient.rpc('search_products', {
     term: params.termo || params.q || '',
     region: params.regiao || 'SP',
@@ -80,6 +83,64 @@ async function supabaseSearchProducts(params) {
   });
   if (error) throw error;
   return data || [];
+}
+
+async function supabaseListProductFilters() {
+  const { data, error } = await supabaseClient
+    .from('products')
+    .select('grupo, categoria')
+    .limit(10000);
+  if (error) throw error;
+  const rows = data || [];
+  return {
+    grupos: uniqueSorted(rows.map((row) => row.grupo)),
+    linhas: uniqueSorted(rows.map((row) => row.categoria))
+  };
+}
+
+async function supabaseListProducts(params = {}) {
+  const region = params.regiao || 'SP';
+  const limit = Math.min(Math.max(Number(params.limite || 1000), 1), 5000);
+  let query = supabaseClient
+    .from('products')
+    .select('codigo, descricao, marca, aplicacao, ano, estoque, estoque_quantidade, preco_sp, preco_pr, grupo, categoria, montadora, oem, similar')
+    .order('codigo', { ascending: true })
+    .limit(limit);
+
+  const term = String(params.termo || params.q || '').trim();
+  if (term) {
+    const pattern = `%${escapePostgrestFilter(term)}%`;
+    query = query.or([
+      `codigo.ilike.${pattern}`,
+      `descricao.ilike.${pattern}`,
+      `marca.ilike.${pattern}`,
+      `aplicacao.ilike.${pattern}`,
+      `grupo.ilike.${pattern}`,
+      `categoria.ilike.${pattern}`,
+      `montadora.ilike.${pattern}`,
+      `oem.ilike.${pattern}`,
+      `similar.ilike.${pattern}`
+    ].join(','));
+  }
+  if (params.grupo) query = query.eq('grupo', params.grupo);
+  if (params.linha) query = query.eq('categoria', params.linha);
+  if (params.disponiveis === true) query = query.gt('estoque_quantidade', 0);
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data || []).map((product) => Object.assign({}, product, {
+    linha: product.categoria,
+    preco: region === 'PR' ? product.preco_pr : product.preco_sp
+  }));
+}
+
+function uniqueSorted(values) {
+  return Array.from(new Set((values || []).map((value) => String(value || '').trim()).filter(Boolean)))
+    .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+}
+
+function escapePostgrestFilter(value) {
+  return String(value || '').replace(/[(),]/g, ' ');
 }
 
 async function supabaseCreateOrder(payload) {
