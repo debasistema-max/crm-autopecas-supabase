@@ -162,7 +162,7 @@ async function supabaseCreateQuotation(payload) {
 async function supabaseListOrdersReport(filters = {}) {
   let query = supabaseClient
     .from('orders')
-    .select('id, numero_pedido, data_hora, created_at, regiao, vendedor, codigo_sap_cliente, cliente, cnpj, telefone, prazo, transportadora, subtotal, desconto_total, total, status')
+    .select('id, numero_pedido, data_hora, created_at, regiao, vendedor, codigo_sap_cliente, cliente, cnpj, telefone, endereco, prazo, transportadora, transportadora_cnpj, transportadora_endereco, observacao, subtotal, desconto_total, total, status')
     .order('created_at', { ascending: false })
     .limit(300);
   if (filters.from) query = query.gte('created_at', filters.from);
@@ -180,7 +180,7 @@ async function supabaseListOrdersReport(filters = {}) {
 async function supabaseListQuotationsReport(filters = {}) {
   let query = supabaseClient
     .from('quotations')
-    .select('id, numero_cotacao, data_hora, created_at, regiao, vendedor, codigo_sap_cliente, cliente, cnpj, telefone, prazo, transportadora, subtotal, desconto_total, total, status')
+    .select('id, numero_cotacao, data_hora, created_at, regiao, vendedor, codigo_sap_cliente, cliente, cnpj, telefone, endereco, prazo, transportadora, transportadora_cnpj, transportadora_endereco, observacao, subtotal, desconto_total, total, status')
     .order('created_at', { ascending: false })
     .limit(300);
   if (filters.from) query = query.gte('created_at', filters.from);
@@ -193,6 +193,50 @@ async function supabaseListQuotationsReport(filters = {}) {
   const { data, error } = await query;
   if (error) throw error;
   return data || [];
+}
+
+async function supabaseUpdateOrderReport(payload = {}) {
+  const updates = sanitizeDocumentUpdates(payload);
+  const { data, error } = await supabaseClient
+    .from('orders')
+    .update(updates)
+    .eq('id', payload.id)
+    .select('id, numero_pedido, status')
+    .single();
+  if (error) throw error;
+  await supabaseLog('ATUALIZAR_PEDIDO', 'orders', payload.id, updates);
+  return data;
+}
+
+async function supabaseUpdateQuotationReport(payload = {}) {
+  const updates = sanitizeDocumentUpdates(payload);
+  const { data, error } = await supabaseClient
+    .from('quotations')
+    .update(updates)
+    .eq('id', payload.id)
+    .select('id, numero_cotacao, status')
+    .single();
+  if (error) throw error;
+  await supabaseLog('ATUALIZAR_COTACAO', 'quotations', payload.id, updates);
+  return data;
+}
+
+function sanitizeDocumentUpdates(payload = {}) {
+  if (!payload.id) throw new Error('Registro nao informado.');
+  if (!String(payload.cliente || '').trim()) throw new Error('Cliente e obrigatorio.');
+  return {
+    codigo_sap_cliente: String(payload.codigo_sap_cliente || '').trim() || null,
+    cliente: String(payload.cliente || '').trim(),
+    cnpj: String(payload.cnpj || '').trim() || null,
+    telefone: String(payload.telefone || '').trim() || null,
+    endereco: String(payload.endereco || '').trim() || null,
+    prazo: String(payload.prazo || '').trim() || null,
+    transportadora: String(payload.transportadora || '').trim() || null,
+    transportadora_cnpj: String(payload.transportadora_cnpj || '').trim() || null,
+    transportadora_endereco: String(payload.transportadora_endereco || '').trim() || null,
+    observacao: String(payload.observacao || '').trim() || null,
+    status: payload.status
+  };
 }
 
 async function supabaseListBusinessClients(filters = {}) {

@@ -278,6 +278,7 @@ function renderDocumentReportShell(kind) {
         <p id="${kind}Message" class="form-message"></p>
       </div>
     </section>
+    <section class="panel" id="${kind}EditPanel" hidden></section>
     <section class="panel" id="${kind}Results"><div class="empty-state">Carregando ${title.toLowerCase()}...</div></section>
   `;
 }
@@ -300,6 +301,7 @@ async function loadDocumentReport(kind) {
       : await supabaseListQuotationsReport(filters);
     window[`${kind}LastRows`] = rows;
     target.innerHTML = renderDocumentReport(kind, rows);
+    bindDocumentEditButtons(kind, rows);
   } catch (error) {
     target.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
   }
@@ -320,7 +322,7 @@ function renderDocumentReport(kind, rows) {
       <table>
         <thead>
           <tr>
-            <th>Numero</th><th>Data</th><th>Cliente</th><th>SAP</th><th>Vendedor</th><th>Status</th><th>Total</th>
+            <th>Numero</th><th>Data</th><th>Cliente</th><th>SAP</th><th>Vendedor</th><th>Status</th><th>Total</th><th></th>
           </tr>
         </thead>
         <tbody>
@@ -333,12 +335,96 @@ function renderDocumentReport(kind, rows) {
               <td>${escapeHtml(row.vendedor || '')}</td>
               <td><span class="status-pill">${escapeHtml(row.status || '')}</span></td>
               <td>${money(row.total)}</td>
+              <td><button class="btn btn-secondary" type="button" data-edit-document="${index}">Editar</button></td>
             </tr>
           `).join('')}
         </tbody>
       </table>
     </div>
   `;
+}
+
+function bindDocumentEditButtons(kind, rows) {
+  document.querySelectorAll('[data-edit-document]').forEach((button) => {
+    button.addEventListener('click', () => showDocumentEditForm(kind, rows[Number(button.dataset.editDocument)]));
+  });
+}
+
+function showDocumentEditForm(kind, row) {
+  const panel = document.getElementById(`${kind}EditPanel`);
+  const numberKey = kind === 'pedidos' ? 'numero_pedido' : 'numero_cotacao';
+  panel.hidden = false;
+  panel.innerHTML = `
+    <div class="panel-header">
+      <div>
+        <h2>Editar ${escapeHtml(row[numberKey] || '')}</h2>
+        <p>Atualize dados comerciais e status do registro.</p>
+      </div>
+    </div>
+    <form id="${kind}EditForm" class="field-grid">
+      <input id="${kind}EditId" type="hidden" value="${escapeHtml(row.id || '')}">
+      <label class="span-3">Status
+        <select id="${kind}EditStatus">
+          ${documentStatusOptions(kind).map((status) => `<option value="${escapeHtml(status)}"${status === row.status ? ' selected' : ''}>${escapeHtml(status)}</option>`).join('')}
+        </select>
+      </label>
+      <label class="span-3">Codigo SAP<input id="${kind}EditSap" value="${escapeHtml(row.codigo_sap_cliente || '')}"></label>
+      <label class="span-6">Cliente<input id="${kind}EditClient" value="${escapeHtml(row.cliente || '')}" required></label>
+      <label class="span-3">CNPJ<input id="${kind}EditCnpj" value="${escapeHtml(formatCnpj(row.cnpj || ''))}"></label>
+      <label class="span-3">Telefone<input id="${kind}EditPhone" value="${escapeHtml(row.telefone || '')}"></label>
+      <label class="span-6">Endereco<input id="${kind}EditAddress" value="${escapeHtml(row.endereco || '')}"></label>
+      <label class="span-3">Prazo<input id="${kind}EditTerm" value="${escapeHtml(row.prazo || '')}"></label>
+      <label class="span-3">Transportadora<input id="${kind}EditCarrier" value="${escapeHtml(row.transportadora || '')}"></label>
+      <label class="span-3">CNPJ transportadora<input id="${kind}EditCarrierCnpj" value="${escapeHtml(formatCnpj(row.transportadora_cnpj || ''))}"></label>
+      <label class="span-6">Endereco transportadora<input id="${kind}EditCarrierAddress" value="${escapeHtml(row.transportadora_endereco || '')}"></label>
+      <label class="span-12">Observacao<textarea id="${kind}EditNotes">${escapeHtml(row.observacao || '')}</textarea></label>
+      <div class="span-12 actions-row">
+        <button class="btn btn-primary" type="submit">Salvar alteracoes</button>
+        <button class="btn btn-ghost" id="${kind}EditCancel" type="button">Cancelar</button>
+        <p id="${kind}EditMessage" class="form-message"></p>
+      </div>
+    </form>
+  `;
+  document.getElementById(`${kind}EditForm`).addEventListener('submit', (event) => saveDocumentEdit(event, kind));
+  document.getElementById(`${kind}EditCancel`).addEventListener('click', () => {
+    panel.hidden = true;
+    panel.innerHTML = '';
+  });
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function saveDocumentEdit(event, kind) {
+  event.preventDefault();
+  const message = document.getElementById(`${kind}EditMessage`);
+  message.style.color = 'var(--muted)';
+  message.textContent = 'Salvando alteracoes...';
+  try {
+    const payload = {
+      id: document.getElementById(`${kind}EditId`).value,
+      status: document.getElementById(`${kind}EditStatus`).value,
+      codigo_sap_cliente: document.getElementById(`${kind}EditSap`).value,
+      cliente: document.getElementById(`${kind}EditClient`).value,
+      cnpj: document.getElementById(`${kind}EditCnpj`).value,
+      telefone: document.getElementById(`${kind}EditPhone`).value,
+      endereco: document.getElementById(`${kind}EditAddress`).value,
+      prazo: document.getElementById(`${kind}EditTerm`).value,
+      transportadora: document.getElementById(`${kind}EditCarrier`).value,
+      transportadora_cnpj: document.getElementById(`${kind}EditCarrierCnpj`).value,
+      transportadora_endereco: document.getElementById(`${kind}EditCarrierAddress`).value,
+      observacao: document.getElementById(`${kind}EditNotes`).value
+    };
+    if (kind === 'pedidos') {
+      await supabaseUpdateOrderReport(payload);
+    } else {
+      await supabaseUpdateQuotationReport(payload);
+    }
+    message.style.color = 'var(--success)';
+    message.textContent = 'Alteracoes salvas.';
+    await loadDocumentReport(kind);
+  } catch (error) {
+    message.style.color = 'var(--accent)';
+    message.textContent = error.message;
+  }
 }
 
 function exportDocumentReport(kind) {
