@@ -1,6 +1,7 @@
 let quoteItems = [];
 let quoteClientSearchTimer = null;
 let quoteSelectedProduct = null;
+let quoteImportPreviewItems = [];
 
 async function renderCreateQuotation(container) {
   quoteItems = [];
@@ -81,7 +82,6 @@ async function renderCreateQuotation(container) {
                   <div class="actions-row sap-item-search-actions">
                     <button class="btn btn-primary" type="submit">Buscar</button>
                     <button class="btn btn-ghost" id="quoteImportItemsButton" type="button">Importar itens</button>
-                    <input id="quoteImportItemsFile" type="file" accept=".csv,.txt" hidden>
                   </div>
                   <div class="sap-stock-line" id="quoteProductStockLine" hidden>Disp. Venda: <strong>-</strong> / Pr.Unit.: <strong>-</strong></div>
                   <label id="quoteQuantityLabel" hidden>Quantidade
@@ -95,6 +95,26 @@ async function renderCreateQuotation(container) {
                 <div id="quoteSearchResults" class="sap-product-results"><div class="empty-state compact-state">Pesquise para adicionar itens a cotacao.</div></div>
               </div>
               <div class="sap-totals" id="quoteTotals"></div>
+            </div>
+          </div>
+          <div class="sap-import-modal" id="quoteItemsImportModal" hidden>
+            <div class="sap-import-dialog">
+              <div class="panel-header">
+                <div><h2>Importar itens</h2><p>Cole codigos com quantidade ou carregue um arquivo CSV/TXT.</p></div>
+                <button class="btn btn-ghost" id="quoteCloseImportItemsButton" type="button">Fechar</button>
+              </div>
+              <label>Codigos e quantidades
+                <textarea id="quoteImportItemsText" placeholder="7175526020;2&#10;711032201;4"></textarea>
+              </label>
+              <div class="actions-row">
+                <button class="btn btn-secondary" id="quoteLoadImportItemsFileButton" type="button">Carregar arquivo</button>
+                <button class="btn btn-primary" id="quotePreviewImportItemsButton" type="button">Verificar codigos</button>
+                <button class="btn btn-primary" id="quoteApplyImportItemsButton" type="button" disabled>Importar quantidades</button>
+                <input id="quoteImportItemsFile" type="file" accept=".csv,.txt" hidden>
+              </div>
+              <div id="quoteImportItemsPreview" class="sap-product-results">
+                <div class="empty-state compact-state">A lista verificada aparece aqui.</div>
+              </div>
             </div>
           </div>
           <div class="sap-tab-panel" data-sap-panel="freight" hidden>
@@ -200,9 +220,15 @@ async function renderCreateQuotation(container) {
     clearQuoteProductSelection();
   });
   document.getElementById('quoteImportItemsButton').addEventListener('click', () => {
+    openQuoteItemsImportModal();
+  });
+  document.getElementById('quoteCloseImportItemsButton').addEventListener('click', closeQuoteItemsImportModal);
+  document.getElementById('quoteLoadImportItemsFileButton').addEventListener('click', () => {
     document.getElementById('quoteImportItemsFile').click();
   });
-  document.getElementById('quoteImportItemsFile').addEventListener('change', importQuoteItemsFromFile);
+  document.getElementById('quotePreviewImportItemsButton').addEventListener('click', previewQuoteImportItems);
+  document.getElementById('quoteApplyImportItemsButton').addEventListener('click', applyQuoteImportItems);
+  document.getElementById('quoteImportItemsFile').addEventListener('change', loadQuoteItemsImportFile);
   renderQuoteCart();
 }
 
@@ -272,34 +298,82 @@ function addProductToQuote(product, forcedQuantity = null) {
   renderQuoteCart();
 }
 
-async function importQuoteItemsFromFile(event) {
+function openQuoteItemsImportModal() {
+  document.getElementById('quoteItemsImportModal').hidden = false;
+}
+
+function closeQuoteItemsImportModal() {
+  document.getElementById('quoteItemsImportModal').hidden = true;
+}
+
+async function loadQuoteItemsImportFile(event) {
   const file = event.target.files && event.target.files[0];
   event.target.value = '';
   if (!file) return;
-  const target = document.getElementById('quoteSearchResults');
-  target.innerHTML = '<div class="empty-state compact-state">Importando itens...</div>';
+  document.getElementById('quoteImportItemsText').value = await file.text();
+  await previewQuoteImportItems();
+}
+
+async function previewQuoteImportItems() {
+  const target = document.getElementById('quoteImportItemsPreview');
+  const applyButton = document.getElementById('quoteApplyImportItemsButton');
+  const parsed = parseImportItemsText(document.getElementById('quoteImportItemsText').value);
+  quoteImportPreviewItems = [];
+  applyButton.disabled = true;
+  if (!parsed.length) {
+    target.innerHTML = '<div class="empty-state compact-state">Informe ao menos um codigo.</div>';
+    return;
+  }
+  target.innerHTML = '<div class="empty-state compact-state">Verificando codigos...</div>';
   try {
-    const lines = (await file.text()).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    let added = 0;
-    const misses = [];
-    for (const line of lines) {
-      const parts = line.split(/[;\t,]/).map((part) => part.trim());
-      const code = parts[0];
-      const quantity = Math.max(1, Number(parts[1] || 1));
-      if (!code || /^cod/i.test(code)) continue;
+    for (const item of parsed) {
+      const code = item.code;
       const products = await supabaseSearchProducts({ termo: code, regiao: document.getElementById('quoteRegion').value, limite: 10 });
       const product = products.find((item) => String(item.codigo) === code) || products[0];
-      if (!product) {
-        misses.push(code);
-        continue;
-      }
-      addProductToQuote(product, quantity);
-      added += 1;
+      quoteImportPreviewItems.push({ code, quantity: item.quantity, product });
     }
-    target.innerHTML = '<div class="empty-state compact-state">' + added + ' itens importados.' + (misses.length ? ' Nao encontrados: ' + escapeHtml(misses.slice(0, 8).join(', ')) : '') + '</div>';
+    target.innerHTML = renderQuoteImportItemsPreview();
+    target.querySelectorAll('[data-quote-import-qty]').forEach((input) => {
+      input.addEventListener('change', () => {
+        quoteImportPreviewItems[Number(input.dataset.quoteImportQty)].quantity = Math.max(1, Number(input.value || 1));
+      });
+    });
+    applyButton.disabled = !quoteImportPreviewItems.some((item) => item.product);
   } catch (error) {
     target.innerHTML = `<div class="empty-state compact-state">${escapeHtml(error.message)}</div>`;
   }
+}
+
+function renderQuoteImportItemsPreview() {
+  return `
+    <div class="table-wrap compact-table">
+      <table>
+        <thead><tr><th>Codigo</th><th>Produto encontrado</th><th>Estoque</th><th>Preco</th><th>Quantidade</th></tr></thead>
+        <tbody>
+          ${quoteImportPreviewItems.map((item, index) => `
+            <tr>
+              <td>${escapeHtml(item.code)}</td>
+              <td>${item.product ? escapeHtml(item.product.descricao || '') : '<strong>Nao encontrado</strong>'}</td>
+              <td>${item.product ? escapeHtml(item.product.estoque || '0') : '-'}</td>
+              <td>${item.product ? money(Number(item.product.preco || 0)) : '-'}</td>
+              <td><input type="number" min="1" value="${escapeHtml(item.quantity)}" data-quote-import-qty="${index}" ${item.product ? '' : 'disabled'}></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function applyQuoteImportItems() {
+  let added = 0;
+  quoteImportPreviewItems.forEach((item) => {
+    if (!item.product) return;
+    addProductToQuote(item.product, item.quantity);
+    added += 1;
+  });
+  document.getElementById('quoteSearchResults').innerHTML = '<div class="empty-state compact-state">' + added + ' itens importados para a cotacao.</div>';
+  closeQuoteItemsImportModal();
 }
 
 function renderQuoteCart() {

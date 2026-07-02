@@ -572,7 +572,7 @@ td input {
 
 .sap-bottom-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 260px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 24px;
   align-items: start;
   padding-top: 16px;
@@ -580,7 +580,7 @@ td input {
 
 .sap-add-form {
   display: grid;
-  grid-template-columns: minmax(220px, 0.85fr) minmax(280px, 1.1fr) minmax(220px, 0.85fr) auto;
+  grid-template-columns: minmax(180px, 0.9fr) minmax(240px, 1.2fr) minmax(180px, 0.9fr) auto;
   gap: 10px 14px;
   align-items: end;
 }
@@ -615,7 +615,44 @@ td input {
   display: grid;
   gap: 8px;
   align-content: start;
+  justify-self: end;
+  width: min(100%, 320px);
   font-size: 12px;
+}
+
+.sap-import-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.sap-import-modal[hidden] {
+  display: none;
+}
+
+.sap-import-dialog {
+  width: min(980px, 100%);
+  max-height: min(760px, calc(100vh - 48px));
+  overflow: auto;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.25);
+  padding: 16px;
+}
+
+.sap-import-dialog textarea {
+  min-height: 140px;
+  resize: vertical;
+}
+
+.sap-import-dialog .table-wrap {
+  max-height: 320px;
+  overflow: auto;
 }
 
 .sap-totals div {

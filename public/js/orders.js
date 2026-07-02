@@ -1,6 +1,7 @@
 let orderItems = [];
 let orderClientSearchTimer = null;
 let orderSelectedProduct = null;
+let orderImportPreviewItems = [];
 
 async function renderOrders(container) {
   orderItems = [];
@@ -81,7 +82,6 @@ async function renderOrders(container) {
                   <div class="actions-row sap-item-search-actions">
                     <button class="btn btn-primary" type="submit">Buscar</button>
                     <button class="btn btn-ghost" id="orderImportItemsButton" type="button">Importar itens</button>
-                    <input id="orderImportItemsFile" type="file" accept=".csv,.txt" hidden>
                   </div>
                   <div class="sap-stock-line" id="orderProductStockLine" hidden>Disp. Venda: <strong>-</strong> / Pr.Unit.: <strong>-</strong></div>
                   <label id="orderQuantityLabel" hidden>Quantidade
@@ -95,6 +95,26 @@ async function renderOrders(container) {
                 <div id="orderSearchResults" class="sap-product-results"><div class="empty-state compact-state">Pesquise para adicionar itens ao pedido.</div></div>
               </div>
               <div class="sap-totals" id="cartTotals"></div>
+            </div>
+          </div>
+          <div class="sap-import-modal" id="orderItemsImportModal" hidden>
+            <div class="sap-import-dialog">
+              <div class="panel-header">
+                <div><h2>Importar itens</h2><p>Cole codigos com quantidade ou carregue um arquivo CSV/TXT.</p></div>
+                <button class="btn btn-ghost" id="orderCloseImportItemsButton" type="button">Fechar</button>
+              </div>
+              <label>Codigos e quantidades
+                <textarea id="orderImportItemsText" placeholder="7175526020;2&#10;711032201;4"></textarea>
+              </label>
+              <div class="actions-row">
+                <button class="btn btn-secondary" id="orderLoadImportItemsFileButton" type="button">Carregar arquivo</button>
+                <button class="btn btn-primary" id="orderPreviewImportItemsButton" type="button">Verificar codigos</button>
+                <button class="btn btn-primary" id="orderApplyImportItemsButton" type="button" disabled>Importar quantidades</button>
+                <input id="orderImportItemsFile" type="file" accept=".csv,.txt" hidden>
+              </div>
+              <div id="orderImportItemsPreview" class="sap-product-results">
+                <div class="empty-state compact-state">A lista verificada aparece aqui.</div>
+              </div>
             </div>
           </div>
           <div class="sap-tab-panel" data-sap-panel="freight" hidden>
@@ -203,9 +223,15 @@ async function renderOrders(container) {
     clearOrderProductSelection();
   });
   document.getElementById('orderImportItemsButton').addEventListener('click', () => {
+    openOrderItemsImportModal();
+  });
+  document.getElementById('orderCloseImportItemsButton').addEventListener('click', closeOrderItemsImportModal);
+  document.getElementById('orderLoadImportItemsFileButton').addEventListener('click', () => {
     document.getElementById('orderImportItemsFile').click();
   });
-  document.getElementById('orderImportItemsFile').addEventListener('change', importOrderItemsFromFile);
+  document.getElementById('orderPreviewImportItemsButton').addEventListener('click', previewOrderImportItems);
+  document.getElementById('orderApplyImportItemsButton').addEventListener('click', applyOrderImportItems);
+  document.getElementById('orderImportItemsFile').addEventListener('change', loadOrderItemsImportFile);
   renderCart();
 }
 
@@ -291,34 +317,96 @@ function addProductToOrder(product, forcedQuantity = null) {
   renderCart();
 }
 
-async function importOrderItemsFromFile(event) {
+function openOrderItemsImportModal() {
+  document.getElementById('orderItemsImportModal').hidden = false;
+}
+
+function closeOrderItemsImportModal() {
+  document.getElementById('orderItemsImportModal').hidden = true;
+}
+
+function parseImportItemsText(text) {
+  return String(text || '').split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split(/[;\t,]/).map((part) => part.trim());
+      return {
+        code: parts[0],
+        quantity: Math.max(1, Number(String(parts[1] || '1').replace(',', '.')) || 1)
+      };
+    })
+    .filter((item) => item.code && !/^cod/i.test(item.code));
+}
+
+async function loadOrderItemsImportFile(event) {
   const file = event.target.files && event.target.files[0];
   event.target.value = '';
   if (!file) return;
-  const target = document.getElementById('orderSearchResults');
-  target.innerHTML = '<div class="empty-state compact-state">Importando itens...</div>';
+  document.getElementById('orderImportItemsText').value = await file.text();
+  await previewOrderImportItems();
+}
+
+async function previewOrderImportItems() {
+  const target = document.getElementById('orderImportItemsPreview');
+  const applyButton = document.getElementById('orderApplyImportItemsButton');
+  const parsed = parseImportItemsText(document.getElementById('orderImportItemsText').value);
+  orderImportPreviewItems = [];
+  applyButton.disabled = true;
+  if (!parsed.length) {
+    target.innerHTML = '<div class="empty-state compact-state">Informe ao menos um codigo.</div>';
+    return;
+  }
+  target.innerHTML = '<div class="empty-state compact-state">Verificando codigos...</div>';
   try {
-    const lines = (await file.text()).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    let added = 0;
-    const misses = [];
-    for (const line of lines) {
-      const parts = line.split(/[;\t,]/).map((part) => part.trim());
-      const code = parts[0];
-      const quantity = Math.max(1, Number(parts[1] || 1));
-      if (!code || /^cod/i.test(code)) continue;
+    for (const item of parsed) {
+      const code = item.code;
       const products = await supabaseSearchProducts({ termo: code, regiao: document.getElementById('orderRegion').value, limite: 10 });
       const product = products.find((item) => String(item.codigo) === code) || products[0];
-      if (!product) {
-        misses.push(code);
-        continue;
-      }
-      addProductToOrder(product, quantity);
-      added += 1;
+      orderImportPreviewItems.push({ code, quantity: item.quantity, product });
     }
-    target.innerHTML = '<div class="empty-state compact-state">' + added + ' itens importados.' + (misses.length ? ' Nao encontrados: ' + escapeHtml(misses.slice(0, 8).join(', ')) : '') + '</div>';
+    target.innerHTML = renderOrderImportItemsPreview();
+    target.querySelectorAll('[data-order-import-qty]').forEach((input) => {
+      input.addEventListener('change', () => {
+        orderImportPreviewItems[Number(input.dataset.orderImportQty)].quantity = Math.max(1, Number(input.value || 1));
+      });
+    });
+    applyButton.disabled = !orderImportPreviewItems.some((item) => item.product);
   } catch (error) {
     target.innerHTML = `<div class="empty-state compact-state">${escapeHtml(error.message)}</div>`;
   }
+}
+
+function renderOrderImportItemsPreview() {
+  return `
+    <div class="table-wrap compact-table">
+      <table>
+        <thead><tr><th>Codigo</th><th>Produto encontrado</th><th>Estoque</th><th>Preco</th><th>Quantidade</th></tr></thead>
+        <tbody>
+          ${orderImportPreviewItems.map((item, index) => `
+            <tr>
+              <td>${escapeHtml(item.code)}</td>
+              <td>${item.product ? escapeHtml(item.product.descricao || '') : '<strong>Nao encontrado</strong>'}</td>
+              <td>${item.product ? escapeHtml(item.product.estoque || '0') : '-'}</td>
+              <td>${item.product ? money(Number(item.product.preco || 0)) : '-'}</td>
+              <td><input type="number" min="1" value="${escapeHtml(item.quantity)}" data-order-import-qty="${index}" ${item.product ? '' : 'disabled'}></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function applyOrderImportItems() {
+  let added = 0;
+  orderImportPreviewItems.forEach((item) => {
+    if (!item.product) return;
+    addProductToOrder(item.product, item.quantity);
+    added += 1;
+  });
+  document.getElementById('orderSearchResults').innerHTML = '<div class="empty-state compact-state">' + added + ' itens importados para o pedido.</div>';
+  closeOrderItemsImportModal();
 }
 
 function renderCart() {
