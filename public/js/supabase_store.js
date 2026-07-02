@@ -162,7 +162,7 @@ async function supabaseCreateQuotation(payload) {
 async function supabaseListOrdersReport(filters = {}) {
   let query = supabaseClient
     .from('orders')
-    .select('id, numero_pedido, data_hora, created_at, regiao, vendedor, codigo_sap_cliente, cliente, cnpj, telefone, endereco, prazo, transportadora, transportadora_cnpj, transportadora_endereco, observacao, subtotal, desconto_total, total, status')
+    .select('id, numero_pedido, data_hora, created_at, regiao, vendedor, codigo_sap_cliente, cliente, cnpj, telefone, endereco, prazo, transportadora, transportadora_cnpj, transportadora_endereco, observacao, subtotal, desconto_total, total, status, order_items(id, item, codigo, descricao, marca, aplicacao, quantidade, preco_unitario, desconto_percentual, preco_final_unitario, total_item)')
     .order('created_at', { ascending: false })
     .limit(300);
   if (filters.from) query = query.gte('created_at', filters.from);
@@ -180,7 +180,7 @@ async function supabaseListOrdersReport(filters = {}) {
 async function supabaseListQuotationsReport(filters = {}) {
   let query = supabaseClient
     .from('quotations')
-    .select('id, numero_cotacao, data_hora, created_at, regiao, vendedor, codigo_sap_cliente, cliente, cnpj, telefone, endereco, prazo, transportadora, transportadora_cnpj, transportadora_endereco, observacao, subtotal, desconto_total, total, status')
+    .select('id, numero_cotacao, data_hora, created_at, regiao, vendedor, codigo_sap_cliente, cliente, cnpj, telefone, endereco, prazo, transportadora, transportadora_cnpj, transportadora_endereco, observacao, subtotal, desconto_total, total, status, quotation_items(id, item, codigo, descricao, marca, aplicacao, quantidade, preco_unitario, desconto_percentual, preco_final_unitario, total_item)')
     .order('created_at', { ascending: false })
     .limit(300);
   if (filters.from) query = query.gte('created_at', filters.from);
@@ -196,46 +196,32 @@ async function supabaseListQuotationsReport(filters = {}) {
 }
 
 async function supabaseUpdateOrderReport(payload = {}) {
-  const updates = sanitizeDocumentUpdates(payload);
-  const { data, error } = await supabaseClient
-    .from('orders')
-    .update(updates)
-    .eq('id', payload.id)
-    .select('id, numero_pedido, status')
-    .single();
+  const { data, error } = await supabaseClient.rpc('update_order_items', {
+    payload: sanitizeDocumentItemsUpdate(payload)
+  });
   if (error) throw error;
-  await supabaseLog('ATUALIZAR_PEDIDO', 'orders', payload.id, updates);
-  return data;
+  return data || {};
 }
 
 async function supabaseUpdateQuotationReport(payload = {}) {
-  const updates = sanitizeDocumentUpdates(payload);
-  const { data, error } = await supabaseClient
-    .from('quotations')
-    .update(updates)
-    .eq('id', payload.id)
-    .select('id, numero_cotacao, status')
-    .single();
+  const { data, error } = await supabaseClient.rpc('update_quotation_items', {
+    payload: sanitizeDocumentItemsUpdate(payload)
+  });
   if (error) throw error;
-  await supabaseLog('ATUALIZAR_COTACAO', 'quotations', payload.id, updates);
-  return data;
+  return data || {};
 }
 
-function sanitizeDocumentUpdates(payload = {}) {
+function sanitizeDocumentItemsUpdate(payload = {}) {
   if (!payload.id) throw new Error('Registro nao informado.');
-  if (!String(payload.cliente || '').trim()) throw new Error('Cliente e obrigatorio.');
+  const items = Array.isArray(payload.items) ? payload.items : [];
+  if (!items.length) throw new Error('Informe ao menos um item.');
   return {
-    codigo_sap_cliente: String(payload.codigo_sap_cliente || '').trim() || null,
-    cliente: String(payload.cliente || '').trim(),
-    cnpj: String(payload.cnpj || '').trim() || null,
-    telefone: String(payload.telefone || '').trim() || null,
-    endereco: String(payload.endereco || '').trim() || null,
-    prazo: String(payload.prazo || '').trim() || null,
-    transportadora: String(payload.transportadora || '').trim() || null,
-    transportadora_cnpj: String(payload.transportadora_cnpj || '').trim() || null,
-    transportadora_endereco: String(payload.transportadora_endereco || '').trim() || null,
-    observacao: String(payload.observacao || '').trim() || null,
-    status: payload.status
+    id: payload.id,
+    items: items.map((item) => ({
+      codigo: String(item.codigo || '').trim(),
+      quantidade: Math.max(1, Number(item.quantidade || 1)),
+      desconto_percentual: Math.max(0, Number(item.desconto_percentual || 0))
+    })).filter((item) => item.codigo)
   };
 }
 

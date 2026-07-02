@@ -246,6 +246,19 @@ td input {
   font-size: 20px;
 }
 
+.document-edit-summary {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: #f8fafb;
+  display: grid;
+  gap: 4px;
+}
+
+.document-edit-summary span {
+  color: var(--muted);
+}
+
 .import-summary {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));

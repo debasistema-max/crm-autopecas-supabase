@@ -326,7 +326,7 @@ function renderDocumentReport(kind, rows) {
           </tr>
         </thead>
         <tbody>
-          ${rows.map((row) => `
+          ${rows.map((row, index) => `
             <tr>
               <td><strong>${escapeHtml(row[numberKey] || '')}</strong><small>${escapeHtml(row.regiao || '')}</small></td>
               <td>${escapeHtml(formatDateTime(row.created_at || row.data_hora))}</td>
@@ -353,44 +353,151 @@ function bindDocumentEditButtons(kind, rows) {
 function showDocumentEditForm(kind, row) {
   const panel = document.getElementById(`${kind}EditPanel`);
   const numberKey = kind === 'pedidos' ? 'numero_pedido' : 'numero_cotacao';
+  const itemsKey = kind === 'pedidos' ? 'order_items' : 'quotation_items';
+  window[`${kind}EditingItems`] = normalizeDocumentItems(row[itemsKey] || []);
   panel.hidden = false;
   panel.innerHTML = `
     <div class="panel-header">
       <div>
-        <h2>Editar ${escapeHtml(row[numberKey] || '')}</h2>
-        <p>Atualize dados comerciais e status do registro.</p>
+        <h2>Editar itens ${escapeHtml(row[numberKey] || '')}</h2>
+        <p>${escapeHtml(row.cliente || '')} | ${escapeHtml(formatCnpj(row.cnpj || ''))}</p>
       </div>
     </div>
     <form id="${kind}EditForm" class="field-grid">
       <input id="${kind}EditId" type="hidden" value="${escapeHtml(row.id || '')}">
-      <label class="span-3">Status
-        <select id="${kind}EditStatus">
-          ${documentStatusOptions(kind).map((status) => `<option value="${escapeHtml(status)}"${status === row.status ? ' selected' : ''}>${escapeHtml(status)}</option>`).join('')}
-        </select>
+      <div class="span-12 document-edit-summary">
+        <strong>Cliente travado</strong>
+        <span>${escapeHtml(row.codigo_sap_cliente || '')} ${escapeHtml(row.cliente || '')}</span>
+      </div>
+      <label class="span-8">Adicionar produto
+        <input id="${kind}EditProductTerm" type="search" placeholder="Codigo, descricao, aplicacao ou similar">
       </label>
-      <label class="span-3">Codigo SAP<input id="${kind}EditSap" value="${escapeHtml(row.codigo_sap_cliente || '')}"></label>
-      <label class="span-6">Cliente<input id="${kind}EditClient" value="${escapeHtml(row.cliente || '')}" required></label>
-      <label class="span-3">CNPJ<input id="${kind}EditCnpj" value="${escapeHtml(formatCnpj(row.cnpj || ''))}"></label>
-      <label class="span-3">Telefone<input id="${kind}EditPhone" value="${escapeHtml(row.telefone || '')}"></label>
-      <label class="span-6">Endereco<input id="${kind}EditAddress" value="${escapeHtml(row.endereco || '')}"></label>
-      <label class="span-3">Prazo<input id="${kind}EditTerm" value="${escapeHtml(row.prazo || '')}"></label>
-      <label class="span-3">Transportadora<input id="${kind}EditCarrier" value="${escapeHtml(row.transportadora || '')}"></label>
-      <label class="span-3">CNPJ transportadora<input id="${kind}EditCarrierCnpj" value="${escapeHtml(formatCnpj(row.transportadora_cnpj || ''))}"></label>
-      <label class="span-6">Endereco transportadora<input id="${kind}EditCarrierAddress" value="${escapeHtml(row.transportadora_endereco || '')}"></label>
-      <label class="span-12">Observacao<textarea id="${kind}EditNotes">${escapeHtml(row.observacao || '')}</textarea></label>
+      <div class="span-4 actions-row align-end">
+        <button class="btn btn-secondary" id="${kind}EditProductSearchButton" type="button">Pesquisar item</button>
+      </div>
+      <div class="span-12" id="${kind}EditProductResults">
+        <div class="empty-state compact-state">Pesquise para adicionar novos itens.</div>
+      </div>
+      <div class="span-12" id="${kind}EditItems"></div>
       <div class="span-12 actions-row">
-        <button class="btn btn-primary" type="submit">Salvar alteracoes</button>
+        <button class="btn btn-primary" type="submit">Salvar itens</button>
         <button class="btn btn-ghost" id="${kind}EditCancel" type="button">Cancelar</button>
         <p id="${kind}EditMessage" class="form-message"></p>
       </div>
     </form>
   `;
+  renderDocumentEditItems(kind);
+  const searchButton = document.getElementById(`${kind}EditProductSearchButton`);
+  const searchInput = document.getElementById(`${kind}EditProductTerm`);
+  searchButton.addEventListener('click', () => searchProductsForDocumentEdit(kind, row.regiao || 'SP'));
+  searchInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      searchProductsForDocumentEdit(kind, row.regiao || 'SP');
+    }
+  });
   document.getElementById(`${kind}EditForm`).addEventListener('submit', (event) => saveDocumentEdit(event, kind));
   document.getElementById(`${kind}EditCancel`).addEventListener('click', () => {
     panel.hidden = true;
     panel.innerHTML = '';
   });
   panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function normalizeDocumentItems(items) {
+  return (items || [])
+    .slice()
+    .sort((a, b) => Number(a.item || 0) - Number(b.item || 0))
+    .map((item) => ({
+      codigo: item.codigo,
+      descricao: item.descricao,
+      marca: item.marca,
+      aplicacao: item.aplicacao,
+      preco: Number(item.preco_unitario || 0),
+      quantidade: Number(item.quantidade || 1),
+      desconto_percentual: Number(item.desconto_percentual || 0)
+    }));
+}
+
+function renderDocumentEditItems(kind) {
+  const target = document.getElementById(`${kind}EditItems`);
+  const items = window[`${kind}EditingItems`] || [];
+  if (!items.length) {
+    target.innerHTML = '<div class="empty-state">Nenhum item no documento.</div>';
+    return;
+  }
+  const subtotal = items.reduce((sum, item) => sum + Number(item.preco || 0) * Number(item.quantidade || 0), 0);
+  const total = items.reduce((sum, item) => sum + Number(item.preco || 0) * Number(item.quantidade || 0) * (1 - Number(item.desconto_percentual || 0) / 100), 0);
+  target.innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Codigo</th><th>Qtd</th><th>Desc. %</th><th>Unitario</th><th>Total</th><th></th></tr></thead>
+        <tbody>
+          ${items.map((item, index) => `
+            <tr>
+              <td>${escapeHtml(item.codigo || '')}<br><small>${escapeHtml(item.descricao || '')}</small></td>
+              <td><input type="number" min="1" value="${escapeHtml(item.quantidade)}" data-document-edit-qty="${index}"></td>
+              <td><input type="number" min="0" step="0.01" value="${escapeHtml(item.desconto_percentual)}" data-document-edit-discount="${index}"></td>
+              <td>${money(item.preco)}</td>
+              <td>${money(item.preco * item.quantidade * (1 - item.desconto_percentual / 100))}</td>
+              <td><button class="btn btn-ghost" type="button" data-document-edit-remove="${index}">Remover</button></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div class="totals">
+      <div><span>Subtotal</span><span>${money(subtotal)}</span></div>
+      <div><span>Desconto</span><span>${money(subtotal - total)}</span></div>
+      <div><strong>Total</strong><strong>${money(total)}</strong></div>
+    </div>
+  `;
+  target.querySelectorAll('[data-document-edit-qty]').forEach((input) => {
+    input.addEventListener('change', () => {
+      items[Number(input.dataset.documentEditQty)].quantidade = Math.max(1, Number(input.value || 1));
+      renderDocumentEditItems(kind);
+    });
+  });
+  target.querySelectorAll('[data-document-edit-discount]').forEach((input) => {
+    input.addEventListener('change', () => {
+      items[Number(input.dataset.documentEditDiscount)].desconto_percentual = Math.max(0, Number(input.value || 0));
+      renderDocumentEditItems(kind);
+    });
+  });
+  target.querySelectorAll('[data-document-edit-remove]').forEach((button) => {
+    button.addEventListener('click', () => {
+      items.splice(Number(button.dataset.documentEditRemove), 1);
+      renderDocumentEditItems(kind);
+    });
+  });
+}
+
+async function searchProductsForDocumentEdit(kind, regiao) {
+  const target = document.getElementById(`${kind}EditProductResults`);
+  await searchProductsInto(target, {
+    termo: document.getElementById(`${kind}EditProductTerm`).value,
+    regiao
+  }, (product) => addProductToDocumentEdit(kind, product));
+}
+
+function addProductToDocumentEdit(kind, product) {
+  const items = window[`${kind}EditingItems`] || [];
+  const existing = items.find((item) => item.codigo === product.codigo);
+  if (existing) {
+    existing.quantidade += 1;
+  } else {
+    items.push({
+      codigo: product.codigo,
+      descricao: product.descricao,
+      marca: product.marca,
+      aplicacao: product.aplicacao,
+      preco: Number(product.preco || 0),
+      quantidade: 1,
+      desconto_percentual: 0
+    });
+  }
+  window[`${kind}EditingItems`] = items;
+  renderDocumentEditItems(kind);
 }
 
 async function saveDocumentEdit(event, kind) {
@@ -401,17 +508,7 @@ async function saveDocumentEdit(event, kind) {
   try {
     const payload = {
       id: document.getElementById(`${kind}EditId`).value,
-      status: document.getElementById(`${kind}EditStatus`).value,
-      codigo_sap_cliente: document.getElementById(`${kind}EditSap`).value,
-      cliente: document.getElementById(`${kind}EditClient`).value,
-      cnpj: document.getElementById(`${kind}EditCnpj`).value,
-      telefone: document.getElementById(`${kind}EditPhone`).value,
-      endereco: document.getElementById(`${kind}EditAddress`).value,
-      prazo: document.getElementById(`${kind}EditTerm`).value,
-      transportadora: document.getElementById(`${kind}EditCarrier`).value,
-      transportadora_cnpj: document.getElementById(`${kind}EditCarrierCnpj`).value,
-      transportadora_endereco: document.getElementById(`${kind}EditCarrierAddress`).value,
-      observacao: document.getElementById(`${kind}EditNotes`).value
+      items: window[`${kind}EditingItems`] || []
     };
     if (kind === 'pedidos') {
       await supabaseUpdateOrderReport(payload);
