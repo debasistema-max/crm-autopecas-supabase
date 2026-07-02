@@ -59,16 +59,20 @@ Deno.serve(async (req) => {
       );
     }
 
-    const emailResult = await sendEmails(data, payload);
+    const emailResult = await sendEmails(supabase, data, payload);
     return json({ ok: true, data: Object.assign({}, data, { anexos: attachments, email: emailResult }) });
   } catch (error) {
     return json({ ok: false, error: error.message || 'Erro ao enviar cadastro.' }, 500);
   }
 });
 
-async function sendEmails(row: Record<string, string>, payload: Record<string, string>) {
+async function sendEmails(
+  config: { url: string; key: string },
+  row: Record<string, string>,
+  payload: Record<string, string>
+) {
   const from = getEmailFrom();
-  const to = Deno.env.get('CADASTRO_EMAIL_TO') || 'financeiro@ipsbrasil.com.br';
+  const to = await getPortalCadastroEmailTo(config);
   const errors: string[] = [];
 
   const subject = `Novo cadastro ${row.protocolo} - ${row.razao_social || row.cnpj}`;
@@ -123,6 +127,22 @@ async function sendEmails(row: Record<string, string>, payload: Record<string, s
     ok: errors.length === 0,
     errors
   };
+}
+
+async function getPortalCadastroEmailTo(config: { url: string; key: string }) {
+  const fallback = Deno.env.get('CADASTRO_EMAIL_TO') || 'financeiro@ipsbrasil.com.br';
+  try {
+    const rows = await supabaseFetch(
+      config,
+      '/rest/v1/settings?select=value&key=eq.portal_cadastros&limit=1'
+    );
+    const value = Array.isArray(rows) && rows[0] ? rows[0].value : null;
+    const email = String(value?.email_principal || '').trim();
+    return email || fallback;
+  } catch (error) {
+    console.error('Falha ao ler email principal do portal', error.message || error);
+    return fallback;
+  }
 }
 
 function ensureEmailConfigured() {

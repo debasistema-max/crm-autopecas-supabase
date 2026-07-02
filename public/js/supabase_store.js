@@ -178,6 +178,81 @@ async function supabaseListCadastrosClientes(filters = {}) {
   return data || [];
 }
 
+async function supabaseGetPortalCadastroSettings() {
+  const { data, error } = await supabaseClient
+    .from('settings')
+    .select('value')
+    .eq('key', 'portal_cadastros')
+    .maybeSingle();
+  if (error) throw error;
+  return Object.assign({ email_principal: '' }, data && data.value ? data.value : {});
+}
+
+async function supabaseSavePortalCadastroSettings(payload = {}) {
+  const email = String(payload.email_principal || '').trim();
+  if (!isValidEmail(email)) throw new Error('Informe um email principal valido.');
+  const value = {
+    email_principal: email,
+    updated_at: new Date().toISOString()
+  };
+  const { data, error } = await supabaseClient
+    .from('settings')
+    .upsert({ key: 'portal_cadastros', value }, { onConflict: 'key' })
+    .select('key, value')
+    .single();
+  if (error) throw error;
+  await supabaseLog('ATUALIZAR_CONFIG_PORTAL_CADASTROS', 'settings', 'portal_cadastros', value);
+  return data.value || value;
+}
+
+async function supabaseGetCadastrosPortalReport(filters = {}) {
+  const statuses = cadastroPortalStatuses();
+  const totalPromise = buildCadastrosPortalQuery('id', { count: 'exact', head: true }, filters);
+  const statusPromises = statuses.map((status) => buildCadastrosPortalQuery('id', { count: 'exact', head: true }, filters).eq('status', status));
+  const recentPromise = buildCadastrosPortalQuery(
+    'id, protocolo, status, codigo_sap_cliente, cnpj, razao_social, nome_fantasia, cidade, estado, email_compras, vendedor, created_at',
+    {},
+    filters
+  )
+    .order('created_at', { ascending: false })
+    .limit(200);
+
+  const [settingsResult, totalResult, recentResult, ...statusResults] = await Promise.all([
+    supabaseGetPortalCadastroSettings(),
+    totalPromise,
+    recentPromise,
+    ...statusPromises
+  ]);
+
+  const firstError = [totalResult, recentResult, ...statusResults].find((result) => result.error);
+  if (firstError) throw firstError.error;
+
+  return {
+    settings: settingsResult,
+    total: totalResult.count || 0,
+    byStatus: statuses.map((status, index) => ({ status, count: statusResults[index].count || 0 })),
+    recent: recentResult.data || []
+  };
+}
+
+function buildCadastrosPortalQuery(select, options, filters) {
+  let query = supabaseClient
+    .from('cadastros_clientes')
+    .select(select, options);
+  if (filters.status) query = query.eq('status', filters.status);
+  if (filters.from) query = query.gte('created_at', filters.from);
+  if (filters.to) query = query.lt('created_at', filters.to);
+  return query;
+}
+
+function cadastroPortalStatuses() {
+  return ['Novo', 'Em analise', 'Pendente', 'Aprovado', 'Reprovado', 'Finalizado SAP'];
+}
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+}
+
 async function supabaseUpdateCadastroCliente(payload) {
   const updates = {
     status: payload.status,
