@@ -153,6 +153,48 @@ async function supabaseCreateOrder(payload) {
   return data || {};
 }
 
+async function supabaseCreateQuotation(payload) {
+  const { data, error } = await supabaseClient.rpc('create_quotation', { payload });
+  if (error) throw error;
+  return data || {};
+}
+
+async function supabaseListOrdersReport(filters = {}) {
+  let query = supabaseClient
+    .from('orders')
+    .select('id, numero_pedido, data_hora, created_at, regiao, vendedor, codigo_sap_cliente, cliente, cnpj, telefone, prazo, transportadora, subtotal, desconto_total, total, status')
+    .order('created_at', { ascending: false })
+    .limit(300);
+  if (filters.from) query = query.gte('created_at', filters.from);
+  if (filters.to) query = query.lt('created_at', filters.to);
+  if (filters.status) query = query.eq('status', filters.status);
+  if (filters.termo) {
+    const term = `%${escapePostgrestFilter(filters.termo)}%`;
+    query = query.or(`numero_pedido.ilike.${term},codigo_sap_cliente.ilike.${term},cliente.ilike.${term},cnpj.ilike.${term},vendedor.ilike.${term}`);
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
+}
+
+async function supabaseListQuotationsReport(filters = {}) {
+  let query = supabaseClient
+    .from('quotations')
+    .select('id, numero_cotacao, data_hora, created_at, regiao, vendedor, codigo_sap_cliente, cliente, cnpj, telefone, prazo, transportadora, subtotal, desconto_total, total, status')
+    .order('created_at', { ascending: false })
+    .limit(300);
+  if (filters.from) query = query.gte('created_at', filters.from);
+  if (filters.to) query = query.lt('created_at', filters.to);
+  if (filters.status) query = query.eq('status', filters.status);
+  if (filters.termo) {
+    const term = `%${escapePostgrestFilter(filters.termo)}%`;
+    query = query.or(`numero_cotacao.ilike.${term},codigo_sap_cliente.ilike.${term},cliente.ilike.${term},cnpj.ilike.${term},vendedor.ilike.${term}`);
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
+}
+
 async function supabaseListBusinessClients(filters = {}) {
   let query = supabaseClient
     .from('clients')
