@@ -259,6 +259,349 @@ td input {
   color: var(--muted);
 }
 
+.sap-document {
+  min-width: 0;
+}
+
+.sap-titlebar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 48px;
+  padding: 8px 12px;
+  border: 1px solid #c7d0d8;
+  border-bottom: 0;
+  background: #e8edf3;
+}
+
+.sap-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sap-title h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.sap-title-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #273744;
+  color: #273744;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.sap-titlebar strong {
+  font-size: 22px;
+  font-weight: 500;
+}
+
+.sap-window {
+  border: 1px solid #c7d0d8;
+  background: #fff;
+  box-shadow: 0 3px 9px rgba(16, 28, 40, 0.16);
+}
+
+.sap-section {
+  padding: 10px;
+}
+
+.sap-section h3 {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.sap-form-grid {
+  display: grid;
+  grid-template-columns: minmax(460px, 1fr) minmax(320px, 0.48fr);
+  gap: 56px;
+}
+
+.sap-form-left,
+.sap-form-right {
+  display: grid;
+  gap: 5px;
+  align-content: start;
+}
+
+.sap-form-left label,
+.sap-form-right label,
+.sap-add-form label {
+  grid-template-columns: minmax(150px, 220px) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  color: #050b11;
+  font-size: 12px;
+}
+
+.sap-form-right label {
+  grid-template-columns: minmax(130px, 190px) minmax(0, 1fr);
+}
+
+.sap-form-left input,
+.sap-form-left select,
+.sap-form-right input,
+.sap-form-right select,
+.sap-add-form input,
+.sap-add-form select {
+  min-height: 24px;
+  border-radius: 0;
+  padding: 3px 6px;
+  background: #eef2f6;
+  font-size: 12px;
+}
+
+.sap-form-left input:focus,
+.sap-form-left select:focus,
+.sap-form-right input:focus,
+.sap-form-right select:focus,
+.sap-add-form input:focus,
+.sap-add-form select:focus,
+.sap-items-table input:focus {
+  box-shadow: none;
+}
+
+.sap-inline-fields {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) 36px minmax(180px, 0.9fr);
+  gap: 6px;
+}
+
+.sap-inline-fields label {
+  grid-template-columns: minmax(150px, 220px) minmax(0, 1fr);
+}
+
+.sap-inline-fields label:last-child {
+  grid-template-columns: 1fr;
+}
+
+.sap-mini-button {
+  min-height: 24px;
+  border: 0;
+  background: #64bdd0;
+  color: #fff;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.sap-search-results {
+  margin-top: 10px;
+}
+
+.sap-tabs-section {
+  padding-top: 34px;
+}
+
+.sap-tabs {
+  display: flex;
+  align-items: end;
+  gap: 0;
+  border-bottom: 1px solid #c7d0d8;
+}
+
+.sap-tabs button {
+  min-height: 28px;
+  border: 1px solid #b8c2cc;
+  border-bottom: 0;
+  border-radius: 0;
+  padding: 0 16px;
+  background: #dce3ea;
+  color: #050b11;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sap-tabs button.is-active {
+  background: #fff;
+}
+
+.sap-tab-panel {
+  min-height: 420px;
+  border: 1px solid #c7d0d8;
+  border-top: 0;
+  padding: 10px;
+}
+
+.sap-tab-tools {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 26px;
+  font-size: 12px;
+}
+
+.sap-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #1d2d38;
+  font-weight: 400;
+}
+
+.sap-checkbox input {
+  width: auto;
+  min-height: auto;
+}
+
+.sap-items-wrap {
+  overflow-x: auto;
+  border: 1px solid #d5dde5;
+  border-bottom: 0;
+}
+
+.sap-items-table {
+  min-width: 1460px;
+  border-collapse: collapse;
+}
+
+.sap-items-table th,
+.sap-items-table td {
+  border: 1px solid #d5dde5;
+  padding: 5px 8px;
+  font-size: 12px;
+  vertical-align: middle;
+}
+
+.sap-items-table th {
+  background: #e6ebf1;
+  color: #243644;
+  text-transform: none;
+  font-size: 12px;
+  text-align: center;
+}
+
+.sap-items-table td {
+  background: #fff;
+}
+
+.sap-items-table td:nth-child(1),
+.sap-items-table td:nth-child(6),
+.sap-items-table td:nth-child(7),
+.sap-items-table td:nth-child(8),
+.sap-items-table td:nth-child(9),
+.sap-items-table td:nth-child(10),
+.sap-items-table td:nth-child(11),
+.sap-items-table td:nth-child(12) {
+  text-align: right;
+}
+
+.sap-items-table input {
+  min-width: 0;
+  min-height: 24px;
+  border-radius: 0;
+  padding: 2px 6px;
+  text-align: right;
+  font-size: 12px;
+}
+
+.sap-items-table tfoot td {
+  background: #cfe6f3;
+  font-weight: 800;
+}
+
+.sap-code {
+  color: #005dff;
+}
+
+.sap-empty-row {
+  height: 38px;
+  color: var(--muted);
+  text-align: center !important;
+}
+
+.sap-remove-button {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  background: #e6414f;
+  color: #fff;
+  cursor: pointer;
+  font-weight: 900;
+  line-height: 16px;
+}
+
+.sap-bottom-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 24px;
+  align-items: start;
+  padding-top: 16px;
+}
+
+.sap-add-form {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.8fr) minmax(300px, 1fr) minmax(240px, 0.8fr);
+  gap: 10px 14px;
+  align-items: end;
+}
+
+.sap-add-form label {
+  grid-template-columns: 1fr;
+}
+
+.sap-stock-line {
+  grid-column: 1 / -1;
+  color: #18844f;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.sap-product-results {
+  margin-top: 12px;
+}
+
+.sap-totals {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  font-size: 12px;
+}
+
+.sap-totals div {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.sap-totals strong {
+  font-size: 12px;
+}
+
+.sap-grand-total strong,
+.sap-grand-total span {
+  font-weight: 900;
+}
+
+.sap-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 12px;
+}
+
+.sap-footer-actions .btn {
+  min-height: 28px;
+  border-radius: 3px;
+  padding: 0 14px;
+  font-size: 12px;
+}
+
+.sap-footer-actions .btn-primary {
+  background: #25a844;
+}
+
+.sap-footer-actions .btn-ghost {
+  background: #66717c;
+  color: #fff;
+}
+
 .import-summary {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -467,6 +810,18 @@ button:disabled {
   .mapping-grid { grid-template-columns: 1fr; }
   .order-grid { grid-template-columns: 1fr; }
   .cart-summary { position: static; }
+  .sap-form-grid,
+  .sap-bottom-grid {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+  .sap-form-left label,
+  .sap-form-right label {
+    grid-template-columns: minmax(120px, 180px) minmax(0, 1fr);
+  }
+  .sap-add-form {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 680px) {
@@ -484,4 +839,30 @@ button:disabled {
   .mapping-row { grid-template-columns: 1fr; }
   .field-grid { grid-template-columns: 1fr; }
   .span-2, .span-3, .span-4, .span-6, .span-8, .span-12 { grid-column: auto; }
+  .sap-titlebar {
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .sap-title h2,
+  .sap-titlebar strong {
+    font-size: 18px;
+  }
+  .sap-form-left label,
+  .sap-form-right label,
+  .sap-inline-fields,
+  .sap-inline-fields label {
+    grid-template-columns: 1fr;
+  }
+  .sap-mini-button {
+    width: 48px;
+  }
+  .sap-tabs {
+    overflow-x: auto;
+  }
+  .sap-tabs button {
+    white-space: nowrap;
+  }
+  .sap-footer-actions {
+    flex-wrap: wrap;
+  }
 }

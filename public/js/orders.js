@@ -3,69 +3,102 @@ let orderItems = [];
 async function renderOrders(container) {
   orderItems = [];
   container.innerHTML = `
-    <div class="order-grid">
-      <section>
-        <section class="panel">
-          <div class="panel-header">
-            <div><h2>Gerar pedido</h2><p>Escolha um cliente cadastrado, um cadastro aprovado ou preencha manualmente.</p></div>
+    <section class="sap-document">
+      <div class="sap-titlebar">
+        <div class="sap-title"><span class="sap-title-icon">#</span><h2>Pedido de venda</h2></div>
+        <strong>No. Novo</strong>
+      </div>
+      <div class="sap-window">
+        <section class="sap-section">
+          <h3>Dados gerais</h3>
+          <div class="sap-form-grid">
+            <div class="sap-form-left">
+              <label>Filial
+                <select id="orderBranch"><option>(MA/PR) International Parts Service do Brasil Ltda</option></select>
+              </label>
+              <div class="sap-inline-fields">
+                <label>Cliente | CPF/CNPJ
+                  <input id="orderClientSapCode" type="text" placeholder="Codigo SAP">
+                </label>
+                <button class="sap-mini-button" id="orderCadastroSearchButton" type="button" title="Buscar cliente">...</button>
+                <label>
+                  <input id="orderCnpj" type="text" placeholder="CNPJ">
+                </label>
+              </div>
+              <label>Nome cliente<input id="orderClient" type="text"></label>
+              <label>Buscar cliente
+                <input id="orderCadastroSearch" type="search" placeholder="Codigo SAP, CNPJ, protocolo ou empresa">
+              </label>
+              <label>Pessoa de contato<input id="orderPhone" type="text"></label>
+              <label>No Ref.Cli.<input id="orderClientRef" type="text"></label>
+              <label>Vendedor<input id="orderSellerDisplay" type="text" value="${escapeHtml((getStoredSession() || {}).nome || '')}"></label>
+              <label>Utilizacao principal<select id="orderUsage"><option>Revenda</option><option>Consumo</option></select></label>
+              <label>Deposito<select id="orderRegion"><option value="SP">01 - MATRIZ - SP</option><option value="PR">02 - FILIAL - PR</option></select></label>
+              <label>Endereco<input id="orderAddress" type="text"></label>
+              <label>Prazo<input id="orderTerm" type="text"></label>
+            </div>
+            <div class="sap-form-right">
+              <label>Status SAP<input type="text" value="Aberto" readonly></label>
+              <label>Dt.Pedido<input type="text" value="${formatDateInput(new Date())}" readonly></label>
+              <label>Valido ate<input type="date" id="orderValidUntil"></label>
+              <label>Autorizacao SAP<input type="text" value="Sem status" readonly></label>
+              <label>Autorizacao portal<input type="text" value="Sem status" readonly></label>
+            </div>
           </div>
-          <div class="field-grid">
-            <label class="span-8">Cliente
-              <input id="orderCadastroSearch" type="search" placeholder="Buscar cliente por codigo SAP, CNPJ, protocolo ou empresa">
-            </label>
-            <div class="span-4 actions-row align-end">
-              <button class="btn btn-secondary" id="orderCadastroSearchButton" type="button">Buscar cliente</button>
-            </div>
-            <div class="span-12" id="orderCadastroResults">
-              <div class="empty-state compact-state">Clientes e cadastros aprovados aparecem aqui para preencher o pedido.</div>
-            </div>
-            <label class="span-3">Estado
-              <select id="orderRegion"><option>SP</option><option>PR</option></select>
-            </label>
-            <label class="span-3">Codigo SAP cliente<input id="orderClientSapCode" type="text"></label>
-            <label class="span-6">Cliente<input id="orderClient" type="text"></label>
-            <label class="span-4">CNPJ<input id="orderCnpj" type="text"></label>
-            <label class="span-4">Telefone<input id="orderPhone" type="text"></label>
-            <label class="span-8">Endereco<input id="orderAddress" type="text"></label>
-            <label class="span-4">Prazo<input id="orderTerm" type="text"></label>
-            <label class="span-8">Buscar transportadora
-              <input id="orderCarrierSearch" type="search" placeholder="Nome, CNPJ ou cidade">
-            </label>
-            <div class="span-4 actions-row align-end">
-              <button class="btn btn-secondary" id="orderCarrierSearchButton" type="button">Buscar transportadora</button>
-            </div>
-            <div class="span-12" id="orderCarrierResults">
-              <div class="empty-state compact-state">Transportadoras cadastradas aparecem aqui.</div>
-            </div>
-            <label class="span-4">Transportadora<input id="orderCarrier" type="text"></label>
-            <label class="span-4">CNPJ transportadora<input id="orderCarrierCnpj" type="text"></label>
-            <label class="span-4">Endereco transportadora<input id="orderCarrierAddress" type="text"></label>
-            <label class="span-12">Observacao<textarea id="orderNotes"></textarea></label>
+          <div id="orderCadastroResults" class="sap-search-results">
+            <div class="empty-state compact-state">Clientes e cadastros aprovados aparecem aqui para preencher o pedido.</div>
           </div>
         </section>
 
-        <section class="panel">
-          <div class="panel-header">
-            <div><h2>Adicionar item</h2><p>Produtos aparecem somente apos pesquisa.</p></div>
+        <section class="sap-section sap-tabs-section">
+          <div class="sap-tabs">
+            <button class="is-active" type="button">Itens</button>
+            <button type="button">Cliente</button>
+            <button type="button">Frete / Pagamento</button>
+            <button type="button">Observacoes</button>
+            <button type="button">Anexos</button>
+            <button type="button">Campos de usuario</button>
           </div>
-          <form id="orderProductSearch" class="actions-row">
-            <label class="span-6">Produto
-              <input id="orderProductTerm" type="search" placeholder="Codigo, descricao, aplicacao ou similar">
-            </label>
-            <button class="btn btn-primary" type="submit">Pesquisar</button>
-          </form>
+          <div class="sap-tab-panel">
+            <div class="sap-tab-tools">
+              <label class="sap-checkbox"><input type="checkbox" checked> Simular impostos</label>
+              <span id="cartCount">0 itens</span>
+            </div>
+            <div id="cartItems" class="sap-items-wrap"></div>
+            <div class="sap-bottom-grid">
+              <div class="sap-add-item">
+                <form id="orderProductSearch" class="sap-add-form">
+                  <label>Cod.Item
+                    <input id="orderProductTerm" type="search" placeholder="Codigo, descricao, aplicacao ou similar">
+                  </label>
+                  <label>Nome item
+                    <input id="orderProductNamePreview" type="text" readonly>
+                  </label>
+                  <label>Grupo
+                    <input id="orderProductGroupPreview" type="text" readonly>
+                  </label>
+                  <div class="sap-stock-line">Disp. Venda: <strong>-</strong> / Pr.Unit.: <strong>-</strong></div>
+                  <label>Quantidade
+                    <input id="orderAddQuantity" type="number" min="1" value="1">
+                  </label>
+                  <div class="actions-row">
+                    <button class="btn btn-primary" type="submit">Adicionar</button>
+                    <button class="btn btn-ghost" id="orderClearProductButton" type="button">Limpar</button>
+                  </div>
+                </form>
+                <div id="orderSearchResults" class="sap-product-results"><div class="empty-state compact-state">Pesquise para adicionar itens ao pedido.</div></div>
+              </div>
+              <div class="sap-totals" id="cartTotals"></div>
+            </div>
+          </div>
         </section>
-        <section class="panel" id="orderSearchResults"><div class="empty-state">Pesquise para adicionar itens ao pedido.</div></section>
-      </section>
-
-      <aside class="panel cart-summary">
-        <div class="panel-header"><div><h2>Itens do pedido</h2><p id="cartCount">0 itens</p></div></div>
-        <div id="cartItems" class="empty-state">Nenhum item adicionado.</div>
-        <div class="totals" id="cartTotals"></div>
-        <button class="btn btn-primary" id="saveOrderButton" type="button">Salvar pedido</button>
+      </div>
+      <div class="sap-footer-actions">
+        <button class="btn btn-primary" id="saveOrderButton" type="button">Salvar</button>
+        <button class="btn btn-ghost" id="closeOrderButton" type="button">Fechar</button>
         <p id="orderMessage" class="form-message"></p>
-      </aside>
-    </div>
+      </div>
+    </section>
   `;
 
   document.getElementById('orderCadastroSearchButton').addEventListener('click', searchCadastrosForOrder);
@@ -98,13 +131,28 @@ async function renderOrders(container) {
   });
 
   document.getElementById('saveOrderButton').addEventListener('click', saveCurrentOrder);
+  document.getElementById('closeOrderButton').addEventListener('click', () => {
+    openModule('ordersReport');
+  });
+  document.getElementById('orderClearProductButton').addEventListener('click', () => {
+    document.getElementById('orderProductTerm').value = '';
+    document.getElementById('orderProductNamePreview').value = '';
+    document.getElementById('orderProductGroupPreview').value = '';
+    document.getElementById('orderSearchResults').innerHTML = '<div class="empty-state compact-state">Pesquise para adicionar itens ao pedido.</div>';
+  });
   renderCart();
 }
 
 function addProductToOrder(product) {
   const existing = orderItems.find((item) => item.codigo === product.codigo);
+  const qtyInput = document.getElementById('orderAddQuantity');
+  const quantity = Math.max(1, Number(qtyInput ? qtyInput.value || 1 : 1));
+  const namePreview = document.getElementById('orderProductNamePreview');
+  const groupPreview = document.getElementById('orderProductGroupPreview');
+  if (namePreview) namePreview.value = product.descricao || '';
+  if (groupPreview) groupPreview.value = product.grupo || product.linha || product.categoria || '';
   if (existing) {
-    existing.quantidade += 1;
+    existing.quantidade += quantity;
   } else {
     orderItems.push({
       codigo: product.codigo,
@@ -112,7 +160,7 @@ function addProductToOrder(product) {
       marca: product.marca,
       aplicacao: product.aplicacao,
       preco: Number(product.preco || 0),
-      quantidade: 1,
+      quantidade: quantity,
       desconto_percentual: 0
     });
   }
@@ -124,29 +172,17 @@ function renderCart() {
   const count = document.getElementById('cartCount');
   const totals = document.getElementById('cartTotals');
   count.textContent = orderItems.length + (orderItems.length === 1 ? ' item' : ' itens');
+  const subtotal = orderItems.reduce((sum, item) => sum + item.preco * item.quantidade, 0);
+  const total = orderItems.reduce((sum, item) => sum + item.preco * item.quantidade * (1 - item.desconto_percentual / 100), 0);
+  const discount = subtotal - total;
   if (!orderItems.length) {
-    list.className = 'empty-state';
-    list.innerHTML = 'Nenhum item adicionado.';
-    totals.innerHTML = '';
+    list.className = 'sap-items-wrap';
+    list.innerHTML = renderSapOrderItemsTable([]);
+    totals.innerHTML = renderSapTotals(0, 0, 0);
     return;
   }
-  list.className = 'table-wrap';
-  list.innerHTML = `
-    <table>
-      <thead><tr><th>Codigo</th><th>Qtd</th><th>Desc. %</th><th>Total</th><th></th></tr></thead>
-      <tbody>
-        ${orderItems.map((item, index) => `
-          <tr>
-            <td>${escapeHtml(item.codigo)}<br><small>${escapeHtml(item.descricao)}</small></td>
-            <td><input type="number" min="1" value="${item.quantidade}" data-cart-qty="${index}"></td>
-            <td><input type="number" min="0" step="0.01" value="${item.desconto_percentual}" data-cart-discount="${index}"></td>
-            <td>${money(item.preco * item.quantidade * (1 - item.desconto_percentual / 100))}</td>
-            <td><button class="btn btn-ghost" type="button" data-cart-remove="${index}">Remover</button></td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
-  `;
+  list.className = 'sap-items-wrap';
+  list.innerHTML = renderSapOrderItemsTable(orderItems);
   list.querySelectorAll('[data-cart-qty]').forEach((input) => {
     input.addEventListener('change', () => {
       orderItems[Number(input.dataset.cartQty)].quantidade = Math.max(1, Number(input.value || 1));
@@ -165,12 +201,62 @@ function renderCart() {
       renderCart();
     });
   });
-  const subtotal = orderItems.reduce((sum, item) => sum + item.preco * item.quantidade, 0);
-  const total = orderItems.reduce((sum, item) => sum + item.preco * item.quantidade * (1 - item.desconto_percentual / 100), 0);
-  totals.innerHTML = `
-    <div><span>Subtotal</span><span>${money(subtotal)}</span></div>
-    <div><span>Desconto</span><span>${money(subtotal - total)}</span></div>
-    <div><strong>Total</strong><strong>${money(total)}</strong></div>
+  totals.innerHTML = renderSapTotals(subtotal, discount, total);
+}
+
+function renderSapOrderItemsTable(items) {
+  const totalQty = items.reduce((sum, item) => sum + Number(item.quantidade || 0), 0);
+  const subtotal = items.reduce((sum, item) => sum + item.preco * item.quantidade, 0);
+  const total = items.reduce((sum, item) => sum + item.preco * item.quantidade * (1 - item.desconto_percentual / 100), 0);
+  const rows = items.length ? items.map((item, index) => {
+    const finalUnit = item.preco * (1 - item.desconto_percentual / 100);
+    const rowTotal = finalUnit * item.quantidade;
+    return `
+      <tr>
+        <td>${index + 1}</td>
+        <td class="sap-code">${escapeHtml(item.codigo)}</td>
+        <td>${escapeHtml(item.descricao || '')}</td>
+        <td>${escapeHtml(item.marca || '')}</td>
+        <td>${escapeHtml(item.aplicacao || '')}</td>
+        <td>UN</td>
+        <td><input type="number" min="1" value="${escapeHtml(item.quantidade)}" data-cart-qty="${index}"></td>
+        <td>${money(item.preco)}</td>
+        <td><input type="number" min="0" step="0.01" value="${escapeHtml(item.desconto_percentual)}" data-cart-discount="${index}"></td>
+        <td>${money(finalUnit)}</td>
+        <td>${money(rowTotal)}</td>
+        <td>${money(rowTotal)}</td>
+        <td><button class="sap-remove-button" type="button" data-cart-remove="${index}" title="Remover">-</button></td>
+      </tr>
+    `;
+  }).join('') : '<tr><td colspan="13" class="sap-empty-row">Nenhum item adicionado.</td></tr>';
+  return `
+    <table class="sap-items-table">
+      <thead>
+        <tr>
+          <th>#</th><th>Cod.</th><th>Descricao</th><th>Marca</th><th>Aplicacao</th><th>UM</th><th>Qtde</th>
+          <th>Pr.Unit.</th><th>% do desc.</th><th>Pr.Apos Desc.</th><th>Total Apos Desc.</th><th>Total c/ Imp.</th><th></th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+      <tfoot>
+        <tr>
+          <td colspan="6">Totais:</td><td>${totalQty}</td><td></td><td></td><td></td><td>${money(total)}</td><td>${money(subtotal)}</td><td></td>
+        </tr>
+      </tfoot>
+    </table>
+  `;
+}
+
+function renderSapTotals(subtotal, discount, total) {
+  return `
+    <div><span>Sub-total:</span><strong>${money(subtotal)}</strong></div>
+    <div><span>Desconto:</span><strong>${money(discount)}</strong></div>
+    <div><span>Sub-total c/desc.:</span><strong>${money(total)}</strong></div>
+    <div><span>Total ICMS-ST:</span><strong>${money(0)}</strong></div>
+    <div><span>Total IPI:</span><strong>${money(0)}</strong></div>
+    <div><span>Total Desonerado:</span><strong>${money(0)}</strong></div>
+    <div><span>Desp.Adicionais totais:</span><strong>${money(0)}</strong></div>
+    <div class="sap-grand-total"><span>Total geral:</span><strong>${money(total)}</strong></div>
   `;
 }
 
