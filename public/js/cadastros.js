@@ -58,6 +58,16 @@ async function renderCadastrosClientes(container) {
   await load();
 }
 
+async function renderPortalCadastrosControle(container) {
+  if (!isAdminSession()) {
+    container.innerHTML = '<div class="empty-state">Voce nao tem permissao para acessar este modulo.</div>';
+    return;
+  }
+  container.innerHTML = renderPortalCadastrosAdminPanel();
+  bindPortalCadastrosAdminPanel();
+  await loadPortalCadastrosReport();
+}
+
 function renderPortalCadastrosAdminPanel() {
   const today = new Date();
   const from = new Date(today);

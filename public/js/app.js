@@ -4,6 +4,7 @@ const MODULES = {
   orders: { title: 'Gerar Pedido', permission: 'novo_pedido', render: renderOrders },
   sap: { title: 'Importacao SAP', permission: 'alimentacao', render: renderSapImport },
   cadastros: { title: 'Cadastros', permission: 'cadastros', render: renderCadastrosClientes },
+  portalCadastros: { title: 'Portal Clientes', permission: 'usuarios', adminOnly: true, render: renderPortalCadastrosControle },
   users: { title: 'Usuarios', permission: 'usuarios', render: renderUsers },
   logs: { title: 'Logs', permission: 'logs', render: renderLogs }
 };
@@ -59,7 +60,9 @@ function applyNavigationVisibility() {
   const allowed = currentSession.modules || [];
   document.querySelectorAll('.nav-item').forEach((button) => {
     const module = MODULES[button.dataset.module];
-    button.hidden = !!(module && allowed.length && !allowed.includes(module.permission));
+    const blockedByPermission = !!(module && allowed.length && !allowed.includes(module.permission));
+    const blockedByAdmin = !!(module && module.adminOnly && !isCurrentUserAdmin());
+    button.hidden = blockedByPermission || blockedByAdmin;
   });
 }
 
@@ -71,6 +74,11 @@ async function openModule(name) {
   document.getElementById('pageTitle').textContent = module.title;
   location.hash = name;
   document.getElementById('sidebar').classList.remove('is-open');
+
+  if (module.adminOnly && !isCurrentUserAdmin()) {
+    content.innerHTML = '<div class="empty-state">Voce nao tem permissao para acessar este modulo.</div>';
+    return;
+  }
 
   if (allowed.length && !allowed.includes(module.permission)) {
     content.innerHTML = '<div class="empty-state">Voce nao tem permissao para acessar este modulo.</div>';
@@ -90,4 +98,8 @@ async function logoutCurrentUser() {
     clearStoredSession();
     window.location.href = 'index.html';
   }
+}
+
+function isCurrentUserAdmin() {
+  return String(currentSession && currentSession.perfil || '').toUpperCase() === 'ADMIN';
 }
