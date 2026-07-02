@@ -99,7 +99,7 @@ async function searchProductsInto(target, params, onAdd) {
                 `}
                 <td>${escapeHtml(p.estoque)}</td>
                 <td>${money(p.preco)}</td>
-                ${onAdd ? `<td><button class="btn btn-secondary" type="button" data-add-product="${index}">Adicionar</button></td>` : ''}
+                ${onAdd ? `<td><button class="btn btn-secondary" type="button" data-add-product="${index}">Selecionar</button></td>` : ''}
               </tr>
             `).join('')}
           </tbody>

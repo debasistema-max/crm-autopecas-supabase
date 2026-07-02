@@ -1,8 +1,10 @@
 let orderItems = [];
 let orderClientSearchTimer = null;
+let orderSelectedProduct = null;
 
 async function renderOrders(container) {
   orderItems = [];
+  orderSelectedProduct = null;
   container.innerHTML = `
     <section class="sap-document">
       <div class="sap-titlebar">
@@ -67,21 +69,26 @@ async function renderOrders(container) {
             <div class="sap-bottom-grid">
               <div class="sap-add-item">
                 <form id="orderProductSearch" class="sap-add-form">
-                  <label>Cod.Item
-                    <input id="orderProductTerm" type="search" placeholder="Codigo, descricao, aplicacao ou similar">
+                  <label>Cod.Item / EAN
+                    <input id="orderProductTerm" type="search">
                   </label>
                   <label>Nome item
-                    <input id="orderProductNamePreview" type="text" readonly>
+                    <input id="orderProductNamePreview" type="text">
                   </label>
                   <label>Grupo
-                    <input id="orderProductGroupPreview" type="text" readonly>
+                    <select id="orderProductGroupPreview"><option value=""></option></select>
                   </label>
-                  <div class="sap-stock-line">Disp. Venda: <strong>-</strong> / Pr.Unit.: <strong>-</strong></div>
-                  <label>Quantidade
+                  <div class="actions-row sap-item-search-actions">
+                    <button class="btn btn-primary" type="submit">Buscar</button>
+                    <button class="btn btn-ghost" id="orderImportItemsButton" type="button">Importar itens</button>
+                    <input id="orderImportItemsFile" type="file" accept=".csv,.txt" hidden>
+                  </div>
+                  <div class="sap-stock-line" id="orderProductStockLine" hidden>Disp. Venda: <strong>-</strong> / Pr.Unit.: <strong>-</strong></div>
+                  <label id="orderQuantityLabel" hidden>Quantidade
                     <input id="orderAddQuantity" type="number" min="1" value="1">
                   </label>
-                  <div class="actions-row">
-                    <button class="btn btn-primary" type="submit">Adicionar</button>
+                  <div class="actions-row sap-add-controls" id="orderAddControls" hidden>
+                    <button class="btn btn-primary" id="orderAddSelectedProductButton" type="button">Adicionar</button>
                     <button class="btn btn-ghost" id="orderClearProductButton" type="button">Limpar</button>
                   </div>
                 </form>
@@ -168,10 +175,13 @@ async function renderOrders(container) {
 
   document.getElementById('orderProductSearch').addEventListener('submit', async (event) => {
     event.preventDefault();
+    orderSelectedProduct = null;
+    updateOrderProductSelection(null);
     await searchProductsInto(document.getElementById('orderSearchResults'), {
-      termo: document.getElementById('orderProductTerm').value,
+      termo: getOrderProductSearchTerm(),
+      grupo: document.getElementById('orderProductGroupPreview').value,
       regiao: document.getElementById('orderRegion').value
-    }, addProductToOrder);
+    }, selectProductForOrder);
   });
 
   document.getElementById('orderRegion').addEventListener('change', () => {
@@ -184,12 +194,18 @@ async function renderOrders(container) {
   document.getElementById('closeOrderButton').addEventListener('click', () => {
     openModule('ordersReport');
   });
-  document.getElementById('orderClearProductButton').addEventListener('click', () => {
-    document.getElementById('orderProductTerm').value = '';
-    document.getElementById('orderProductNamePreview').value = '';
-    document.getElementById('orderProductGroupPreview').value = '';
-    document.getElementById('orderSearchResults').innerHTML = '<div class="empty-state compact-state">Pesquise para adicionar itens ao pedido.</div>';
+  document.getElementById('orderAddSelectedProductButton').addEventListener('click', () => {
+    if (!orderSelectedProduct) return;
+    addProductToOrder(orderSelectedProduct);
+    clearOrderProductSelection();
   });
+  document.getElementById('orderClearProductButton').addEventListener('click', () => {
+    clearOrderProductSelection();
+  });
+  document.getElementById('orderImportItemsButton').addEventListener('click', () => {
+    document.getElementById('orderImportItemsFile').click();
+  });
+  document.getElementById('orderImportItemsFile').addEventListener('change', importOrderItemsFromFile);
   renderCart();
 }
 
@@ -209,14 +225,56 @@ function bindSapTabs(scope) {
   });
 }
 
-function addProductToOrder(product) {
+function getOrderProductSearchTerm() {
+  return [
+    document.getElementById('orderProductTerm').value,
+    document.getElementById('orderProductNamePreview').value
+  ].filter(Boolean).join(' ').trim();
+}
+
+function setOrderProductGroup(value) {
+  const select = document.getElementById('orderProductGroupPreview');
+  const group = value || '';
+  select.innerHTML = group
+    ? `<option value="${escapeHtml(group)}">${escapeHtml(group)}</option>`
+    : '<option value=""></option>';
+  select.value = group;
+}
+
+function updateOrderProductSelection(product) {
+  const hasProduct = Boolean(product);
+  document.getElementById('orderProductStockLine').hidden = !hasProduct;
+  document.getElementById('orderQuantityLabel').hidden = !hasProduct;
+  document.getElementById('orderAddControls').hidden = !hasProduct;
+  if (!hasProduct) {
+    document.getElementById('orderProductStockLine').innerHTML = 'Disp. Venda: <strong>-</strong> / Pr.Unit.: <strong>-</strong>';
+    return;
+  }
+  document.getElementById('orderProductTerm').value = product.codigo || '';
+  document.getElementById('orderProductNamePreview').value = product.descricao || '';
+  setOrderProductGroup(product.grupo || product.linha || product.categoria || '');
+  document.getElementById('orderProductStockLine').innerHTML = 'Disp. Venda: <strong>' + escapeHtml(product.estoque || '0') + '</strong> / Pr.Unit.: <strong>' + money(Number(product.preco || 0)) + '</strong>';
+  document.getElementById('orderAddQuantity').value = 1;
+}
+
+function selectProductForOrder(product) {
+  orderSelectedProduct = product;
+  updateOrderProductSelection(product);
+}
+
+function clearOrderProductSelection() {
+  orderSelectedProduct = null;
+  document.getElementById('orderProductTerm').value = '';
+  document.getElementById('orderProductNamePreview').value = '';
+  setOrderProductGroup('');
+  document.getElementById('orderSearchResults').innerHTML = '<div class="empty-state compact-state">Pesquise para adicionar itens ao pedido.</div>';
+  updateOrderProductSelection(null);
+}
+
+function addProductToOrder(product, forcedQuantity = null) {
   const existing = orderItems.find((item) => item.codigo === product.codigo);
   const qtyInput = document.getElementById('orderAddQuantity');
-  const quantity = Math.max(1, Number(qtyInput ? qtyInput.value || 1 : 1));
-  const namePreview = document.getElementById('orderProductNamePreview');
-  const groupPreview = document.getElementById('orderProductGroupPreview');
-  if (namePreview) namePreview.value = product.descricao || '';
-  if (groupPreview) groupPreview.value = product.grupo || product.linha || product.categoria || '';
+  const quantity = Math.max(1, Number(forcedQuantity || (qtyInput ? qtyInput.value || 1 : 1)));
   if (existing) {
     existing.quantidade += quantity;
   } else {
@@ -231,6 +289,36 @@ function addProductToOrder(product) {
     });
   }
   renderCart();
+}
+
+async function importOrderItemsFromFile(event) {
+  const file = event.target.files && event.target.files[0];
+  event.target.value = '';
+  if (!file) return;
+  const target = document.getElementById('orderSearchResults');
+  target.innerHTML = '<div class="empty-state compact-state">Importando itens...</div>';
+  try {
+    const lines = (await file.text()).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    let added = 0;
+    const misses = [];
+    for (const line of lines) {
+      const parts = line.split(/[;\t,]/).map((part) => part.trim());
+      const code = parts[0];
+      const quantity = Math.max(1, Number(parts[1] || 1));
+      if (!code || /^cod/i.test(code)) continue;
+      const products = await supabaseSearchProducts({ termo: code, regiao: document.getElementById('orderRegion').value, limite: 10 });
+      const product = products.find((item) => String(item.codigo) === code) || products[0];
+      if (!product) {
+        misses.push(code);
+        continue;
+      }
+      addProductToOrder(product, quantity);
+      added += 1;
+    }
+    target.innerHTML = '<div class="empty-state compact-state">' + added + ' itens importados.' + (misses.length ? ' Nao encontrados: ' + escapeHtml(misses.slice(0, 8).join(', ')) : '') + '</div>';
+  } catch (error) {
+    target.innerHTML = `<div class="empty-state compact-state">${escapeHtml(error.message)}</div>`;
+  }
 }
 
 function renderCart() {

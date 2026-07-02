@@ -580,7 +580,7 @@ td input {
 
 .sap-add-form {
   display: grid;
-  grid-template-columns: minmax(260px, 0.8fr) minmax(300px, 1fr) minmax(240px, 0.8fr);
+  grid-template-columns: minmax(220px, 0.85fr) minmax(280px, 1.1fr) minmax(220px, 0.85fr) auto;
   gap: 10px 14px;
   align-items: end;
 }
@@ -589,11 +589,22 @@ td input {
   grid-template-columns: 1fr;
 }
 
+.sap-item-search-actions {
+  align-self: end;
+  flex-wrap: nowrap;
+  margin-bottom: 0;
+}
+
 .sap-stock-line {
   grid-column: 1 / -1;
   color: #18844f;
   font-size: 12px;
   font-weight: 800;
+}
+
+.sap-add-controls {
+  align-self: end;
+  margin-bottom: 0;
 }
 
 .sap-product-results {

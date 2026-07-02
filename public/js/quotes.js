@@ -1,8 +1,10 @@
 let quoteItems = [];
 let quoteClientSearchTimer = null;
+let quoteSelectedProduct = null;
 
 async function renderCreateQuotation(container) {
   quoteItems = [];
+  quoteSelectedProduct = null;
   container.innerHTML = `
     <section class="sap-document">
       <div class="sap-titlebar">
@@ -67,21 +69,26 @@ async function renderCreateQuotation(container) {
             <div class="sap-bottom-grid">
               <div class="sap-add-item">
                 <form id="quoteProductSearch" class="sap-add-form">
-                  <label>Cod.Item
-                    <input id="quoteProductTerm" type="search" placeholder="Codigo, descricao, aplicacao ou similar">
+                  <label>Cod.Item / EAN
+                    <input id="quoteProductTerm" type="search">
                   </label>
                   <label>Nome item
-                    <input id="quoteProductNamePreview" type="text" readonly>
+                    <input id="quoteProductNamePreview" type="text">
                   </label>
                   <label>Grupo
-                    <input id="quoteProductGroupPreview" type="text" readonly>
+                    <select id="quoteProductGroupPreview"><option value=""></option></select>
                   </label>
-                  <div class="sap-stock-line">Disp. Venda: <strong>-</strong> / Pr.Unit.: <strong>-</strong></div>
-                  <label>Quantidade
+                  <div class="actions-row sap-item-search-actions">
+                    <button class="btn btn-primary" type="submit">Buscar</button>
+                    <button class="btn btn-ghost" id="quoteImportItemsButton" type="button">Importar itens</button>
+                    <input id="quoteImportItemsFile" type="file" accept=".csv,.txt" hidden>
+                  </div>
+                  <div class="sap-stock-line" id="quoteProductStockLine" hidden>Disp. Venda: <strong>-</strong> / Pr.Unit.: <strong>-</strong></div>
+                  <label id="quoteQuantityLabel" hidden>Quantidade
                     <input id="quoteAddQuantity" type="number" min="1" value="1">
                   </label>
-                  <div class="actions-row">
-                    <button class="btn btn-primary" type="submit">Adicionar</button>
+                  <div class="actions-row sap-add-controls" id="quoteAddControls" hidden>
+                    <button class="btn btn-primary" id="quoteAddSelectedProductButton" type="button">Adicionar</button>
                     <button class="btn btn-ghost" id="quoteClearProductButton" type="button">Limpar</button>
                   </div>
                 </form>
@@ -167,10 +174,13 @@ async function renderCreateQuotation(container) {
   });
   document.getElementById('quoteProductSearch').addEventListener('submit', async (event) => {
     event.preventDefault();
+    quoteSelectedProduct = null;
+    updateQuoteProductSelection(null);
     await searchProductsInto(document.getElementById('quoteSearchResults'), {
-      termo: document.getElementById('quoteProductTerm').value,
+      termo: getQuoteProductSearchTerm(),
+      grupo: document.getElementById('quoteProductGroupPreview').value,
       regiao: document.getElementById('quoteRegion').value
-    }, addProductToQuote);
+    }, selectProductForQuote);
   });
   document.getElementById('quoteRegion').addEventListener('change', () => {
     quoteItems = [];
@@ -181,23 +191,71 @@ async function renderCreateQuotation(container) {
   document.getElementById('closeQuoteButton').addEventListener('click', () => {
     openModule('quoteReports');
   });
-  document.getElementById('quoteClearProductButton').addEventListener('click', () => {
-    document.getElementById('quoteProductTerm').value = '';
-    document.getElementById('quoteProductNamePreview').value = '';
-    document.getElementById('quoteProductGroupPreview').value = '';
-    document.getElementById('quoteSearchResults').innerHTML = '<div class="empty-state compact-state">Pesquise para adicionar itens a cotacao.</div>';
+  document.getElementById('quoteAddSelectedProductButton').addEventListener('click', () => {
+    if (!quoteSelectedProduct) return;
+    addProductToQuote(quoteSelectedProduct);
+    clearQuoteProductSelection();
   });
+  document.getElementById('quoteClearProductButton').addEventListener('click', () => {
+    clearQuoteProductSelection();
+  });
+  document.getElementById('quoteImportItemsButton').addEventListener('click', () => {
+    document.getElementById('quoteImportItemsFile').click();
+  });
+  document.getElementById('quoteImportItemsFile').addEventListener('change', importQuoteItemsFromFile);
   renderQuoteCart();
 }
 
-function addProductToQuote(product) {
+function getQuoteProductSearchTerm() {
+  return [
+    document.getElementById('quoteProductTerm').value,
+    document.getElementById('quoteProductNamePreview').value
+  ].filter(Boolean).join(' ').trim();
+}
+
+function setQuoteProductGroup(value) {
+  const select = document.getElementById('quoteProductGroupPreview');
+  const group = value || '';
+  select.innerHTML = group
+    ? `<option value="${escapeHtml(group)}">${escapeHtml(group)}</option>`
+    : '<option value=""></option>';
+  select.value = group;
+}
+
+function updateQuoteProductSelection(product) {
+  const hasProduct = Boolean(product);
+  document.getElementById('quoteProductStockLine').hidden = !hasProduct;
+  document.getElementById('quoteQuantityLabel').hidden = !hasProduct;
+  document.getElementById('quoteAddControls').hidden = !hasProduct;
+  if (!hasProduct) {
+    document.getElementById('quoteProductStockLine').innerHTML = 'Disp. Venda: <strong>-</strong> / Pr.Unit.: <strong>-</strong>';
+    return;
+  }
+  document.getElementById('quoteProductTerm').value = product.codigo || '';
+  document.getElementById('quoteProductNamePreview').value = product.descricao || '';
+  setQuoteProductGroup(product.grupo || product.linha || product.categoria || '');
+  document.getElementById('quoteProductStockLine').innerHTML = 'Disp. Venda: <strong>' + escapeHtml(product.estoque || '0') + '</strong> / Pr.Unit.: <strong>' + money(Number(product.preco || 0)) + '</strong>';
+  document.getElementById('quoteAddQuantity').value = 1;
+}
+
+function selectProductForQuote(product) {
+  quoteSelectedProduct = product;
+  updateQuoteProductSelection(product);
+}
+
+function clearQuoteProductSelection() {
+  quoteSelectedProduct = null;
+  document.getElementById('quoteProductTerm').value = '';
+  document.getElementById('quoteProductNamePreview').value = '';
+  setQuoteProductGroup('');
+  document.getElementById('quoteSearchResults').innerHTML = '<div class="empty-state compact-state">Pesquise para adicionar itens a cotacao.</div>';
+  updateQuoteProductSelection(null);
+}
+
+function addProductToQuote(product, forcedQuantity = null) {
   const existing = quoteItems.find((item) => item.codigo === product.codigo);
   const qtyInput = document.getElementById('quoteAddQuantity');
-  const quantity = Math.max(1, Number(qtyInput ? qtyInput.value || 1 : 1));
-  const namePreview = document.getElementById('quoteProductNamePreview');
-  const groupPreview = document.getElementById('quoteProductGroupPreview');
-  if (namePreview) namePreview.value = product.descricao || '';
-  if (groupPreview) groupPreview.value = product.grupo || product.linha || product.categoria || '';
+  const quantity = Math.max(1, Number(forcedQuantity || (qtyInput ? qtyInput.value || 1 : 1)));
   if (existing) {
     existing.quantidade += quantity;
   } else {
@@ -212,6 +270,36 @@ function addProductToQuote(product) {
     });
   }
   renderQuoteCart();
+}
+
+async function importQuoteItemsFromFile(event) {
+  const file = event.target.files && event.target.files[0];
+  event.target.value = '';
+  if (!file) return;
+  const target = document.getElementById('quoteSearchResults');
+  target.innerHTML = '<div class="empty-state compact-state">Importando itens...</div>';
+  try {
+    const lines = (await file.text()).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    let added = 0;
+    const misses = [];
+    for (const line of lines) {
+      const parts = line.split(/[;\t,]/).map((part) => part.trim());
+      const code = parts[0];
+      const quantity = Math.max(1, Number(parts[1] || 1));
+      if (!code || /^cod/i.test(code)) continue;
+      const products = await supabaseSearchProducts({ termo: code, regiao: document.getElementById('quoteRegion').value, limite: 10 });
+      const product = products.find((item) => String(item.codigo) === code) || products[0];
+      if (!product) {
+        misses.push(code);
+        continue;
+      }
+      addProductToQuote(product, quantity);
+      added += 1;
+    }
+    target.innerHTML = '<div class="empty-state compact-state">' + added + ' itens importados.' + (misses.length ? ' Nao encontrados: ' + escapeHtml(misses.slice(0, 8).join(', ')) : '') + '</div>';
+  } catch (error) {
+    target.innerHTML = `<div class="empty-state compact-state">${escapeHtml(error.message)}</div>`;
+  }
 }
 
 function renderQuoteCart() {
