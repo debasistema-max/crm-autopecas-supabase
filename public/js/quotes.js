@@ -1,4 +1,5 @@
 let quoteItems = [];
+let quoteClientSearchTimer = null;
 
 async function renderCreateQuotation(container) {
   quoteItems = [];
@@ -20,14 +21,17 @@ async function renderCreateQuotation(container) {
                 <label>Cliente | CPF/CNPJ
                   <input id="quoteClientSapCode" type="text" placeholder="Codigo SAP">
                 </label>
-                <button class="sap-mini-button" id="quoteClientSearchButton" type="button" title="Buscar cliente">...</button>
+                <button class="sap-mini-button" id="quoteClientSearchButton" type="button" title="Buscar cliente">&#128269;</button>
                 <label>
                   <input id="quoteCnpj" type="text" placeholder="CNPJ">
                 </label>
               </div>
               <label>Nome cliente<input id="quoteClient" type="text"></label>
               <label>Buscar cliente
-                <input id="quoteClientSearch" type="search" placeholder="Codigo SAP, CNPJ ou empresa">
+                <span class="sap-search-field">
+                  <input id="quoteClientSearch" type="search" placeholder="Codigo SAP, CNPJ, protocolo ou empresa">
+                  <button class="sap-search-button" id="quoteClientSearchSubmitButton" type="button" title="Buscar cliente">&#128269;</button>
+                </span>
               </label>
               <label>Pessoa de contato<input id="quotePhone" type="text"></label>
               <label>No Ref.Cli.<input id="quoteClientRef" type="text"></label>
@@ -135,11 +139,17 @@ async function renderCreateQuotation(container) {
 
   bindSapTabs(container);
   document.getElementById('quoteClientSearchButton').addEventListener('click', searchClientsForQuote);
+  document.getElementById('quoteClientSearchSubmitButton').addEventListener('click', () => searchClientsForQuote({
+    term: document.getElementById('quoteClientSearch').value
+  }));
   document.getElementById('quoteClientSearch').addEventListener('keydown', async (event) => {
     if (event.key === 'Enter') {
       event.preventDefault();
-      await searchClientsForQuote();
+      await searchClientsForQuote({ term: event.target.value });
     }
+  });
+  ['quoteClientSearch', 'quoteClientSapCode', 'quoteCnpj', 'quoteClient'].forEach((id) => {
+    document.getElementById(id).addEventListener('input', scheduleQuoteClientAutoSearch);
   });
   document.getElementById('quoteCarrierCodeSearchButton').addEventListener('click', searchCarriersForQuote);
   document.getElementById('quoteCarrierNameSearchButton').addEventListener('click', searchCarriersForQuote);
@@ -314,11 +324,41 @@ async function saveCurrentQuote() {
   }
 }
 
-async function searchClientsForQuote() {
+function getQuoteClientSearchTerm(sourceId) {
+  if (sourceId) return (document.getElementById(sourceId) || {}).value || '';
+  return [
+    'quoteClientSearch',
+    'quoteClientSapCode',
+    'quoteCnpj',
+    'quoteClient'
+  ].map((id) => (document.getElementById(id) || {}).value || '').find((value) => String(value).trim()) || '';
+}
+
+function scheduleQuoteClientAutoSearch(event) {
+  const term = getQuoteClientSearchTerm(event.target.id);
+  window.clearTimeout(quoteClientSearchTimer);
+  if (!isClientLookupReady(term)) return;
+  quoteClientSearchTimer = window.setTimeout(() => {
+    searchClientsForQuote({ term, auto: true });
+  }, 450);
+}
+
+async function searchClientsForQuote(options = {}) {
   const target = document.getElementById('quoteClientResults');
+  const term = options.term !== undefined ? options.term : getQuoteClientSearchTerm();
+  if (!isClientLookupReady(term)) {
+    target.innerHTML = '<div class="empty-state compact-state">Digite pelo menos 3 caracteres ou CNPJ/codigo para buscar.</div>';
+    return;
+  }
   target.innerHTML = '<div class="empty-state compact-state">Buscando clientes...</div>';
   try {
-    const rows = await supabaseSearchOrderClients(document.getElementById('quoteClientSearch').value);
+    const rows = await supabaseSearchOrderClients(term);
+    const exact = findExactClientMatch(rows, term);
+    if (exact) {
+      applyClientToQuote(exact);
+      target.innerHTML = '<div class="empty-state compact-state">Cliente encontrado e carregado automaticamente.</div>';
+      return;
+    }
     target.innerHTML = renderQuoteClientsResults(rows);
     target.querySelectorAll('[data-use-quote-client]').forEach((button) => {
       button.addEventListener('click', () => applyClientToQuote(rows[Number(button.dataset.useQuoteClient)]));

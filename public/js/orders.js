@@ -1,4 +1,5 @@
 let orderItems = [];
+let orderClientSearchTimer = null;
 
 async function renderOrders(container) {
   orderItems = [];
@@ -20,14 +21,17 @@ async function renderOrders(container) {
                 <label>Cliente | CPF/CNPJ
                   <input id="orderClientSapCode" type="text" placeholder="Codigo SAP">
                 </label>
-                <button class="sap-mini-button" id="orderCadastroSearchButton" type="button" title="Buscar cliente">...</button>
+                <button class="sap-mini-button" id="orderCadastroSearchButton" type="button" title="Buscar cliente">&#128269;</button>
                 <label>
                   <input id="orderCnpj" type="text" placeholder="CNPJ">
                 </label>
               </div>
               <label>Nome cliente<input id="orderClient" type="text"></label>
               <label>Buscar cliente
-                <input id="orderCadastroSearch" type="search" placeholder="Codigo SAP, CNPJ, protocolo ou empresa">
+                <span class="sap-search-field">
+                  <input id="orderCadastroSearch" type="search" placeholder="Codigo SAP, CNPJ, protocolo ou empresa">
+                  <button class="sap-search-button" id="orderCadastroSearchSubmitButton" type="button" title="Buscar cliente">&#128269;</button>
+                </span>
               </label>
               <label>Pessoa de contato<input id="orderPhone" type="text"></label>
               <label>No Ref.Cli.<input id="orderClientRef" type="text"></label>
@@ -135,11 +139,17 @@ async function renderOrders(container) {
 
   bindSapTabs(container);
   document.getElementById('orderCadastroSearchButton').addEventListener('click', searchCadastrosForOrder);
+  document.getElementById('orderCadastroSearchSubmitButton').addEventListener('click', () => searchCadastrosForOrder({
+    term: document.getElementById('orderCadastroSearch').value
+  }));
   document.getElementById('orderCadastroSearch').addEventListener('keydown', async (event) => {
     if (event.key === 'Enter') {
       event.preventDefault();
-      await searchCadastrosForOrder();
+      await searchCadastrosForOrder({ term: event.target.value });
     }
+  });
+  ['orderCadastroSearch', 'orderClientSapCode', 'orderCnpj', 'orderClient'].forEach((id) => {
+    document.getElementById(id).addEventListener('input', scheduleOrderClientAutoSearch);
   });
   document.getElementById('orderCarrierCodeSearchButton').addEventListener('click', searchCarriersForOrder);
   document.getElementById('orderCarrierNameSearchButton').addEventListener('click', searchCarriersForOrder);
@@ -348,11 +358,77 @@ async function saveCurrentOrder() {
   }
 }
 
-async function searchCadastrosForOrder() {
+function clientSearchDigits(value) {
+  return String(value || '').replace(/\D/g, '');
+}
+
+function normalizeClientLookup(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function isClientLookupReady(term) {
+  const value = String(term || '').trim();
+  const digits = clientSearchDigits(value);
+  return digits.length >= 8 || value.length >= 3;
+}
+
+function findExactClientMatch(rows, term) {
+  const raw = String(term || '').trim();
+  const digits = clientSearchDigits(raw);
+  const normalized = normalizeClientLookup(raw);
+  return (rows || []).find((row) => {
+    const rowCnpj = clientSearchDigits(row.cnpj || '');
+    const rowSap = normalizeClientLookup(row.codigo_sap_cliente || '');
+    const rowProtocol = normalizeClientLookup(row.protocolo || '');
+    const rowRazao = normalizeClientLookup(row.razao_social || '');
+    const rowFantasia = normalizeClientLookup(row.nome_fantasia || '');
+    if (digits.length >= 8 && rowCnpj && rowCnpj === digits) return true;
+    if (normalized && rowSap && rowSap === normalized) return true;
+    if (normalized && rowProtocol && rowProtocol === normalized) return true;
+    return Boolean(normalized && (rowRazao === normalized || rowFantasia === normalized));
+  }) || null;
+}
+
+function getOrderClientSearchTerm(sourceId) {
+  if (sourceId) return (document.getElementById(sourceId) || {}).value || '';
+  return [
+    'orderCadastroSearch',
+    'orderClientSapCode',
+    'orderCnpj',
+    'orderClient'
+  ].map((id) => (document.getElementById(id) || {}).value || '').find((value) => String(value).trim()) || '';
+}
+
+function scheduleOrderClientAutoSearch(event) {
+  const term = getOrderClientSearchTerm(event.target.id);
+  window.clearTimeout(orderClientSearchTimer);
+  if (!isClientLookupReady(term)) return;
+  orderClientSearchTimer = window.setTimeout(() => {
+    searchCadastrosForOrder({ term, auto: true });
+  }, 450);
+}
+
+async function searchCadastrosForOrder(options = {}) {
   const target = document.getElementById('orderCadastroResults');
+  const term = options.term !== undefined ? options.term : getOrderClientSearchTerm();
+  if (!isClientLookupReady(term)) {
+    target.innerHTML = '<div class="empty-state compact-state">Digite pelo menos 3 caracteres ou CNPJ/codigo para buscar.</div>';
+    return;
+  }
   target.innerHTML = '<div class="empty-state compact-state">Buscando clientes...</div>';
   try {
-    const rows = await supabaseSearchOrderClients(document.getElementById('orderCadastroSearch').value);
+    const rows = await supabaseSearchOrderClients(term);
+    const exact = findExactClientMatch(rows, term);
+    if (exact) {
+      applyCadastroToOrder(exact);
+      target.innerHTML = '<div class="empty-state compact-state">Cliente encontrado e carregado automaticamente.</div>';
+      return;
+    }
     target.innerHTML = renderOrderCadastrosResults(rows);
     target.querySelectorAll('[data-use-cadastro]').forEach((button) => {
       button.addEventListener('click', () => applyCadastroToOrder(rows[Number(button.dataset.useCadastro)]));
