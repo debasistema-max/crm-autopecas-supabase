@@ -143,10 +143,125 @@ function escapePostgrestFilter(value) {
   return String(value || '').replace(/[(),]/g, ' ');
 }
 
+function onlyDigits(value) {
+  return String(value || '').replace(/\D/g, '');
+}
+
 async function supabaseCreateOrder(payload) {
   const { data, error } = await supabaseClient.rpc('create_order', { payload });
   if (error) throw error;
   return data || {};
+}
+
+async function supabaseListBusinessClients(filters = {}) {
+  let query = supabaseClient
+    .from('clients')
+    .select('id, codigo_sap_cliente, nome, nome_fantasia, cnpj, telefone, email, endereco, cidade, estado, ativo, observacoes, created_at, updated_at')
+    .order('nome', { ascending: true })
+    .limit(300);
+  if (filters.ativos === true) query = query.eq('ativo', true);
+  if (filters.termo) {
+    const term = `%${escapePostgrestFilter(filters.termo)}%`;
+    query = query.or(`codigo_sap_cliente.ilike.${term},nome.ilike.${term},nome_fantasia.ilike.${term},cnpj.ilike.${term},cidade.ilike.${term}`);
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
+}
+
+async function supabaseSaveBusinessClient(payload = {}) {
+  const client = {
+    codigo_sap_cliente: String(payload.codigo_sap_cliente || '').trim() || null,
+    nome: String(payload.nome || '').trim(),
+    nome_fantasia: String(payload.nome_fantasia || '').trim() || null,
+    cnpj: onlyDigits(payload.cnpj || '') || null,
+    telefone: String(payload.telefone || '').trim() || null,
+    email: String(payload.email || '').trim() || null,
+    endereco: String(payload.endereco || '').trim() || null,
+    cidade: String(payload.cidade || '').trim() || null,
+    estado: String(payload.estado || '').trim().toUpperCase() || null,
+    ativo: payload.ativo !== false,
+    observacoes: String(payload.observacoes || '').trim() || null
+  };
+  if (!client.nome) throw new Error('Informe a razao social/nome do cliente.');
+  if (client.email && !isValidEmail(client.email)) throw new Error('Informe um email valido para o cliente.');
+  const record = payload.id ? Object.assign({ id: payload.id }, client) : client;
+  const { data, error } = await supabaseClient
+    .from('clients')
+    .upsert(record, { onConflict: 'id' })
+    .select('id, codigo_sap_cliente, nome, nome_fantasia, cnpj, telefone, email, endereco, cidade, estado, ativo, observacoes')
+    .single();
+  if (error) throw error;
+  await supabaseLog('SALVAR_CLIENTE', 'clients', data.id, client);
+  return data;
+}
+
+async function supabaseListBusinessCarriers(filters = {}) {
+  let query = supabaseClient
+    .from('carriers')
+    .select('id, cnpj, nome, telefone, email, endereco, cidade, estado, ativo, observacoes, created_at')
+    .order('nome', { ascending: true })
+    .limit(300);
+  if (filters.ativos === true) query = query.eq('ativo', true);
+  if (filters.termo) {
+    const term = `%${escapePostgrestFilter(filters.termo)}%`;
+    query = query.or(`nome.ilike.${term},cnpj.ilike.${term},cidade.ilike.${term}`);
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
+}
+
+async function supabaseSaveBusinessCarrier(payload = {}) {
+  const carrier = {
+    nome: String(payload.nome || '').trim(),
+    cnpj: onlyDigits(payload.cnpj || '') || null,
+    telefone: String(payload.telefone || '').trim() || null,
+    email: String(payload.email || '').trim() || null,
+    endereco: String(payload.endereco || '').trim() || null,
+    cidade: String(payload.cidade || '').trim() || null,
+    estado: String(payload.estado || '').trim().toUpperCase() || null,
+    ativo: payload.ativo !== false,
+    observacoes: String(payload.observacoes || '').trim() || null
+  };
+  if (!carrier.nome) throw new Error('Informe o nome da transportadora.');
+  if (carrier.email && !isValidEmail(carrier.email)) throw new Error('Informe um email valido para a transportadora.');
+  const record = payload.id ? Object.assign({ id: payload.id }, carrier) : carrier;
+  const { data, error } = await supabaseClient
+    .from('carriers')
+    .upsert(record, { onConflict: 'id' })
+    .select('id, cnpj, nome, telefone, email, endereco, cidade, estado, ativo, observacoes')
+    .single();
+  if (error) throw error;
+  await supabaseLog('SALVAR_TRANSPORTADORA', 'carriers', data.id, carrier);
+  return data;
+}
+
+async function supabaseSearchOrderClients(term = '') {
+  const [clients, cadastros] = await Promise.all([
+    supabaseListBusinessClients({ termo: term, ativos: true }),
+    supabaseSearchCadastrosClientesForOrder(term)
+  ]);
+  const rows = clients.map((client) => ({
+    origem: 'cliente',
+    id: client.id,
+    codigo_sap_cliente: client.codigo_sap_cliente,
+    razao_social: client.nome,
+    nome_fantasia: client.nome_fantasia,
+    cnpj: client.cnpj,
+    telefone: client.telefone,
+    email_compras: client.email,
+    endereco: client.endereco,
+    cidade: client.cidade,
+    estado: client.estado,
+    status: client.ativo ? 'Ativo' : 'Inativo'
+  }));
+  const portalRows = cadastros.map((row) => Object.assign({ origem: 'portal' }, row));
+  return rows.concat(portalRows).slice(0, 60);
+}
+
+async function supabaseSearchOrderCarriers(term = '') {
+  return supabaseListBusinessCarriers({ termo: term, ativos: true });
 }
 
 async function supabaseGetLogs(filters) {

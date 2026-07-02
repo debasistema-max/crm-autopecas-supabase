@@ -7,17 +7,17 @@ async function renderOrders(container) {
       <section>
         <section class="panel">
           <div class="panel-header">
-            <div><h2>Gerar pedido</h2><p>Escolha um cadastro aprovado ou preencha o cliente manualmente.</p></div>
+            <div><h2>Gerar pedido</h2><p>Escolha um cliente cadastrado, um cadastro aprovado ou preencha manualmente.</p></div>
           </div>
           <div class="field-grid">
-            <label class="span-8">Cadastro recebido
-              <input id="orderCadastroSearch" type="search" placeholder="Buscar por codigo SAP, CNPJ, protocolo ou empresa">
+            <label class="span-8">Cliente
+              <input id="orderCadastroSearch" type="search" placeholder="Buscar cliente por codigo SAP, CNPJ, protocolo ou empresa">
             </label>
             <div class="span-4 actions-row align-end">
-              <button class="btn btn-secondary" id="orderCadastroSearchButton" type="button">Buscar cadastro</button>
+              <button class="btn btn-secondary" id="orderCadastroSearchButton" type="button">Buscar cliente</button>
             </div>
             <div class="span-12" id="orderCadastroResults">
-              <div class="empty-state compact-state">Cadastros aprovados aparecem aqui para preencher o pedido.</div>
+              <div class="empty-state compact-state">Clientes e cadastros aprovados aparecem aqui para preencher o pedido.</div>
             </div>
             <label class="span-3">Estado
               <select id="orderRegion"><option>SP</option><option>PR</option></select>
@@ -28,8 +28,18 @@ async function renderOrders(container) {
             <label class="span-4">Telefone<input id="orderPhone" type="text"></label>
             <label class="span-8">Endereco<input id="orderAddress" type="text"></label>
             <label class="span-4">Prazo<input id="orderTerm" type="text"></label>
+            <label class="span-8">Buscar transportadora
+              <input id="orderCarrierSearch" type="search" placeholder="Nome, CNPJ ou cidade">
+            </label>
+            <div class="span-4 actions-row align-end">
+              <button class="btn btn-secondary" id="orderCarrierSearchButton" type="button">Buscar transportadora</button>
+            </div>
+            <div class="span-12" id="orderCarrierResults">
+              <div class="empty-state compact-state">Transportadoras cadastradas aparecem aqui.</div>
+            </div>
             <label class="span-4">Transportadora<input id="orderCarrier" type="text"></label>
             <label class="span-4">CNPJ transportadora<input id="orderCarrierCnpj" type="text"></label>
+            <label class="span-4">Endereco transportadora<input id="orderCarrierAddress" type="text"></label>
             <label class="span-12">Observacao<textarea id="orderNotes"></textarea></label>
           </div>
         </section>
@@ -63,6 +73,13 @@ async function renderOrders(container) {
     if (event.key === 'Enter') {
       event.preventDefault();
       await searchCadastrosForOrder();
+    }
+  });
+  document.getElementById('orderCarrierSearchButton').addEventListener('click', searchCarriersForOrder);
+  document.getElementById('orderCarrierSearch').addEventListener('keydown', async (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      await searchCarriersForOrder();
     }
   });
 
@@ -172,6 +189,7 @@ async function saveCurrentOrder() {
       prazo: document.getElementById('orderTerm').value,
       transportadora: document.getElementById('orderCarrier').value,
       transportadora_cnpj: document.getElementById('orderCarrierCnpj').value,
+      transportadora_endereco: document.getElementById('orderCarrierAddress').value,
       observacao: document.getElementById('orderNotes').value,
       generateDocuments: false,
       items: orderItems
@@ -194,9 +212,9 @@ async function saveCurrentOrder() {
 
 async function searchCadastrosForOrder() {
   const target = document.getElementById('orderCadastroResults');
-  target.innerHTML = '<div class="empty-state compact-state">Buscando cadastros aprovados...</div>';
+  target.innerHTML = '<div class="empty-state compact-state">Buscando clientes...</div>';
   try {
-    const rows = await supabaseSearchCadastrosClientesForOrder(document.getElementById('orderCadastroSearch').value);
+    const rows = await supabaseSearchOrderClients(document.getElementById('orderCadastroSearch').value);
     target.innerHTML = renderOrderCadastrosResults(rows);
     target.querySelectorAll('[data-use-cadastro]').forEach((button) => {
       button.addEventListener('click', () => applyCadastroToOrder(rows[Number(button.dataset.useCadastro)]));
@@ -207,7 +225,7 @@ async function searchCadastrosForOrder() {
 }
 
 function renderOrderCadastrosResults(rows) {
-  if (!rows.length) return '<div class="empty-state compact-state">Nenhum cadastro aprovado encontrado.</div>';
+  if (!rows.length) return '<div class="empty-state compact-state">Nenhum cliente encontrado.</div>';
   return `
     <div class="table-wrap compact-table">
       <table>
@@ -216,7 +234,7 @@ function renderOrderCadastrosResults(rows) {
             <th>Empresa</th>
             <th>CNPJ</th>
             <th>Codigo SAP</th>
-            <th>Status</th>
+            <th>Origem</th>
             <th></th>
           </tr>
         </thead>
@@ -229,7 +247,7 @@ function renderOrderCadastrosResults(rows) {
               </td>
               <td>${escapeHtml(formatCnpj(row.cnpj || ''))}</td>
               <td>${escapeHtml(row.codigo_sap_cliente || '')}</td>
-              <td>${escapeHtml(row.status || '')}</td>
+              <td>${escapeHtml(row.origem === 'cliente' ? 'CRM' : 'Portal')}</td>
               <td><button class="btn btn-secondary" type="button" data-use-cadastro="${index}">Usar</button></td>
             </tr>
           `).join('')}
@@ -250,6 +268,57 @@ function applyCadastroToOrder(row) {
   const message = document.getElementById('orderMessage');
   message.style.color = 'var(--success)';
   message.textContent = 'Cadastro ' + (row.protocolo || '') + ' carregado no pedido.';
+}
+
+async function searchCarriersForOrder() {
+  const target = document.getElementById('orderCarrierResults');
+  target.innerHTML = '<div class="empty-state compact-state">Buscando transportadoras...</div>';
+  try {
+    const rows = await supabaseSearchOrderCarriers(document.getElementById('orderCarrierSearch').value);
+    target.innerHTML = renderOrderCarriersResults(rows);
+    target.querySelectorAll('[data-use-carrier]').forEach((button) => {
+      button.addEventListener('click', () => applyCarrierToOrder(rows[Number(button.dataset.useCarrier)]));
+    });
+  } catch (error) {
+    target.innerHTML = `<div class="empty-state compact-state">${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function renderOrderCarriersResults(rows) {
+  if (!rows.length) return '<div class="empty-state compact-state">Nenhuma transportadora encontrada.</div>';
+  return `
+    <div class="table-wrap compact-table">
+      <table>
+        <thead><tr><th>Transportadora</th><th>CNPJ</th><th>Cidade/UF</th><th></th></tr></thead>
+        <tbody>
+          ${rows.map((row, index) => `
+            <tr>
+              <td><strong>${escapeHtml(row.nome || '')}</strong><small>${escapeHtml(row.endereco || '')}</small></td>
+              <td>${escapeHtml(formatCnpj(row.cnpj || ''))}</td>
+              <td>${escapeHtml([row.cidade, row.estado].filter(Boolean).join('/'))}</td>
+              <td><button class="btn btn-secondary" type="button" data-use-carrier="${index}">Usar</button></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function applyCarrierToOrder(row) {
+  document.getElementById('orderCarrier').value = row.nome || '';
+  document.getElementById('orderCarrierCnpj').value = formatCnpj(row.cnpj || '');
+  document.getElementById('orderCarrierAddress').value = formatCarrierAddress(row);
+  const message = document.getElementById('orderMessage');
+  message.style.color = 'var(--success)';
+  message.textContent = 'Transportadora carregada no pedido.';
+}
+
+function formatCarrierAddress(row) {
+  return [
+    row.endereco,
+    [row.cidade, row.estado].filter(Boolean).join('/')
+  ].filter(Boolean).join(' - ');
 }
 
 function formatCadastroAddress(row) {

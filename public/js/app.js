@@ -2,6 +2,7 @@ const MODULES = {
   dashboard: { title: 'Dashboard', permission: 'dashboard', render: renderDashboard },
   products: { title: 'Produtos', permission: 'produtos', render: renderProducts },
   orders: { title: 'Gerar Pedido', permission: 'novo_pedido', render: renderOrders },
+  partners: { title: 'Parceiros de Negocios', permission: 'parceiros', render: renderBusinessPartners },
   sap: { title: 'Importacao SAP', permission: 'alimentacao', render: renderSapImport },
   cadastros: { title: 'Cadastros', permission: 'cadastros', render: renderCadastrosClientes },
   portalCadastros: { title: 'Portal Clientes', permission: 'usuarios', adminOnly: true, render: renderPortalCadastrosControle },
