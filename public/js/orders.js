@@ -85,7 +85,7 @@ async function renderOrders(container) {
                   </div>
                   <div class="sap-stock-line" id="orderProductStockLine" hidden>Disp. Venda: <strong>-</strong> / Pr.Unit.: <strong>-</strong></div>
                   <label id="orderQuantityLabel" hidden>Quantidade
-                    <input id="orderAddQuantity" type="number" min="1" value="1">
+                    <input id="orderAddQuantity" type="number" min="0" value="0">
                   </label>
                   <div class="actions-row sap-add-controls" id="orderAddControls" hidden>
                     <button class="btn btn-primary" id="orderAddSelectedProductButton" type="button">Adicionar</button>
@@ -280,7 +280,7 @@ function updateOrderProductSelection(product) {
   document.getElementById('orderProductNamePreview').value = product.descricao || '';
   setOrderProductGroup(product.grupo || product.linha || product.categoria || '');
   document.getElementById('orderProductStockLine').innerHTML = 'Disp. Venda: <strong>' + escapeHtml(product.estoque || '0') + '</strong> / Pr.Unit.: <strong>' + money(Number(product.preco || 0)) + '</strong>';
-  document.getElementById('orderAddQuantity').value = 1;
+  document.getElementById('orderAddQuantity').value = 0;
 }
 
 function selectProductForOrder(product) {
@@ -300,7 +300,16 @@ function clearOrderProductSelection() {
 function addProductToOrder(product, forcedQuantity = null) {
   const existing = orderItems.find((item) => item.codigo === product.codigo);
   const qtyInput = document.getElementById('orderAddQuantity');
-  const quantity = Math.max(1, Number(forcedQuantity || (qtyInput ? qtyInput.value || 1 : 1)));
+  const quantity = Number(forcedQuantity !== null ? forcedQuantity : (qtyInput ? qtyInput.value || 0 : 0));
+  if (quantity <= 0) {
+    if (qtyInput) qtyInput.focus();
+    const message = document.getElementById('orderMessage');
+    if (message) {
+      message.style.color = 'var(--accent)';
+      message.textContent = 'Informe uma quantidade maior que zero.';
+    }
+    return;
+  }
   if (existing) {
     existing.quantidade += quantity;
   } else {

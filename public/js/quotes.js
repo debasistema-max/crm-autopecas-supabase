@@ -85,7 +85,7 @@ async function renderCreateQuotation(container) {
                   </div>
                   <div class="sap-stock-line" id="quoteProductStockLine" hidden>Disp. Venda: <strong>-</strong> / Pr.Unit.: <strong>-</strong></div>
                   <label id="quoteQuantityLabel" hidden>Quantidade
-                    <input id="quoteAddQuantity" type="number" min="1" value="1">
+                    <input id="quoteAddQuantity" type="number" min="0" value="0">
                   </label>
                   <div class="actions-row sap-add-controls" id="quoteAddControls" hidden>
                     <button class="btn btn-primary" id="quoteAddSelectedProductButton" type="button">Adicionar</button>
@@ -261,7 +261,7 @@ function updateQuoteProductSelection(product) {
   document.getElementById('quoteProductNamePreview').value = product.descricao || '';
   setQuoteProductGroup(product.grupo || product.linha || product.categoria || '');
   document.getElementById('quoteProductStockLine').innerHTML = 'Disp. Venda: <strong>' + escapeHtml(product.estoque || '0') + '</strong> / Pr.Unit.: <strong>' + money(Number(product.preco || 0)) + '</strong>';
-  document.getElementById('quoteAddQuantity').value = 1;
+  document.getElementById('quoteAddQuantity').value = 0;
 }
 
 function selectProductForQuote(product) {
@@ -281,7 +281,16 @@ function clearQuoteProductSelection() {
 function addProductToQuote(product, forcedQuantity = null) {
   const existing = quoteItems.find((item) => item.codigo === product.codigo);
   const qtyInput = document.getElementById('quoteAddQuantity');
-  const quantity = Math.max(1, Number(forcedQuantity || (qtyInput ? qtyInput.value || 1 : 1)));
+  const quantity = Number(forcedQuantity !== null ? forcedQuantity : (qtyInput ? qtyInput.value || 0 : 0));
+  if (quantity <= 0) {
+    if (qtyInput) qtyInput.focus();
+    const message = document.getElementById('quoteMessage');
+    if (message) {
+      message.style.color = 'var(--accent)';
+      message.textContent = 'Informe uma quantidade maior que zero.';
+    }
+    return;
+  }
   if (existing) {
     existing.quantidade += quantity;
   } else {
