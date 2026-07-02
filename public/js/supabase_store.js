@@ -196,6 +196,51 @@ async function supabaseSaveBusinessClient(payload = {}) {
   return data;
 }
 
+async function supabaseSaveBusinessClientFromCadastro(cadastro = {}) {
+  const codigo = String(cadastro.codigo_sap_cliente || '').trim();
+  const cnpj = onlyDigits(cadastro.cnpj || '');
+  let existing = null;
+  if (codigo) existing = await supabaseFindBusinessClient('codigo_sap_cliente', codigo);
+  if (!existing && cnpj) existing = await supabaseFindBusinessClient('cnpj', cnpj);
+  return supabaseSaveBusinessClient({
+    id: existing && existing.id,
+    codigo_sap_cliente: codigo,
+    nome: cadastro.razao_social || cadastro.nome_fantasia || '',
+    nome_fantasia: cadastro.nome_fantasia || '',
+    cnpj,
+    telefone: cadastro.whatsapp || cadastro.telefone || '',
+    email: cadastro.email_compras || '',
+    endereco: formatCadastroClientAddress(cadastro),
+    cidade: cadastro.cidade || '',
+    estado: cadastro.estado || '',
+    ativo: true,
+    observacoes: [
+      cadastro.protocolo ? `Origem portal: ${cadastro.protocolo}` : '',
+      cadastro.observacoes || ''
+    ].filter(Boolean).join('\n')
+  });
+}
+
+async function supabaseFindBusinessClient(field, value) {
+  const { data, error } = await supabaseClient
+    .from('clients')
+    .select('id')
+    .eq(field, value)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+
+function formatCadastroClientAddress(cadastro) {
+  return [
+    [cadastro.endereco, cadastro.numero].filter(Boolean).join(', '),
+    cadastro.bairro,
+    cadastro.complemento,
+    [cadastro.cidade, cadastro.estado].filter(Boolean).join('/')
+  ].filter(Boolean).join(' - ');
+}
+
 async function supabaseListBusinessCarriers(filters = {}) {
   let query = supabaseClient
     .from('carriers')
@@ -325,7 +370,7 @@ async function supabaseGetCadastrosPortalReport(filters = {}) {
   const totalPromise = buildCadastrosPortalQuery('id', { count: 'exact', head: true }, filters);
   const statusPromises = statuses.map((status) => buildCadastrosPortalQuery('id', { count: 'exact', head: true }, filters).eq('status', status));
   const recentPromise = buildCadastrosPortalQuery(
-    'id, protocolo, status, codigo_sap_cliente, cnpj, razao_social, nome_fantasia, cidade, estado, email_compras, vendedor, created_at',
+    'id, protocolo, status, codigo_sap_cliente, cnpj, razao_social, nome_fantasia, telefone, whatsapp, email_compras, cidade, estado, endereco, numero, bairro, complemento, observacoes, vendedor, created_at',
     {},
     filters
   )

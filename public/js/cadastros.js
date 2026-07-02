@@ -140,6 +140,7 @@ async function loadPortalCadastrosReport() {
     window.portalCadastrosLastReport = report;
     document.getElementById('portalEmailPrincipal').value = report.settings.email_principal || '';
     target.innerHTML = renderPortalCadastrosReport(report);
+    bindPortalCadastroPartnerButtons(report.recent || []);
     if (message && !message.textContent) message.textContent = '';
   } catch (error) {
     target.innerHTML = `<div class="empty-state compact-state">${escapeHtml(error.message)}</div>`;
@@ -181,10 +182,11 @@ function renderPortalCadastrosReportRows(rows) {
           <th>Codigo SAP</th>
           <th>Email</th>
           <th>Vendedor</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
-        ${rows.map((row) => `
+        ${rows.map((row, index) => `
           <tr>
             <td>${escapeHtml(formatDateTime(row.created_at))}</td>
             <td><strong>${escapeHtml(row.protocolo || '')}</strong></td>
@@ -195,11 +197,34 @@ function renderPortalCadastrosReportRows(rows) {
             <td>${escapeHtml(row.codigo_sap_cliente || '')}</td>
             <td>${escapeHtml(row.email_compras || '')}</td>
             <td>${escapeHtml(row.vendedor || '')}</td>
+            <td><button class="btn btn-secondary" type="button" data-send-cadastro-partner="${index}">Enviar para Parceiros</button></td>
           </tr>
         `).join('')}
       </tbody>
     </table>
   `;
+}
+
+function bindPortalCadastroPartnerButtons(rows) {
+  document.querySelectorAll('[data-send-cadastro-partner]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const row = rows[Number(button.dataset.sendCadastroPartner)];
+      const message = document.getElementById('portalAdminMessage');
+      button.disabled = true;
+      message.style.color = 'var(--muted)';
+      message.textContent = 'Enviando cadastro para Parceiros...';
+      try {
+        const client = await supabaseSaveBusinessClientFromCadastro(row);
+        message.style.color = 'var(--success)';
+        message.textContent = `Cliente ${client.nome || ''} salvo em Parceiros.`;
+      } catch (error) {
+        message.style.color = 'var(--accent)';
+        message.textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
+  });
 }
 
 function exportPortalCadastrosReport() {
