@@ -2,10 +2,12 @@ let quoteItems = [];
 let quoteClientSearchTimer = null;
 let quoteSelectedProduct = null;
 let quoteImportPreviewItems = [];
+let quoteCreateSaved = false;
 
 async function renderCreateQuotation(container) {
   quoteItems = [];
   quoteSelectedProduct = null;
+  quoteCreateSaved = false;
   container.innerHTML = `
     <section class="sap-document">
       <div class="sap-titlebar">
@@ -209,6 +211,7 @@ async function renderCreateQuotation(container) {
   });
   document.getElementById('saveQuoteButton').addEventListener('click', saveCurrentQuote);
   document.getElementById('closeQuoteButton').addEventListener('click', () => {
+    if (hasUnsavedQuoteDraft() && !window.confirm('Existem alteracoes nao salvas. Deseja sair?')) return;
     openModule('quoteReports');
   });
   document.getElementById('quoteAddSelectedProductButton').addEventListener('click', () => {
@@ -279,6 +282,7 @@ function clearQuoteProductSelection() {
 }
 
 function addProductToQuote(product, forcedQuantity = null) {
+  quoteCreateSaved = false;
   const existing = quoteItems.find((item) => item.codigo === product.codigo);
   const qtyInput = document.getElementById('quoteAddQuantity');
   const quantity = Number(forcedQuantity !== null ? forcedQuantity : (qtyInput ? qtyInput.value || 0 : 0));
@@ -517,6 +521,7 @@ async function saveCurrentQuote() {
     validateCommercialDocument(payload, 'a cotacao');
     const data = await supabaseCreateQuotation(payload);
     quoteItems = [];
+    quoteCreateSaved = true;
     renderQuoteCart();
     message.style.color = 'var(--success)';
     message.textContent = 'Cotacao ' + data.numero_cotacao + ' salva com sucesso.';
@@ -527,6 +532,26 @@ async function saveCurrentQuote() {
     button.disabled = false;
     button.textContent = 'Salvar';
   }
+}
+
+function hasUnsavedQuoteDraft() {
+  if (quoteCreateSaved) return false;
+  const fields = [
+    'quoteClientSapCode',
+    'quoteCnpj',
+    'quoteClient',
+    'quoteClientSearch',
+    'quotePhone',
+    'quoteClientRef',
+    'quoteAddress',
+    'quoteCarrierSearch',
+    'quoteCarrier',
+    'quoteNotes'
+  ];
+  return quoteItems.length > 0 || fields.some((id) => {
+    const field = document.getElementById(id);
+    return field && String(field.value || '').trim();
+  });
 }
 
 function getQuoteClientSearchTerm(sourceId) {
@@ -652,15 +677,23 @@ function applyCarrierToQuote(row) {
   message.textContent = 'Transportadora carregada na cotacao.';
 }
 
-async function renderQuotationsReport(container) {
+async function renderQuotationsReport(container, options = {}) {
   container.innerHTML = renderDocumentReportShell('cotacoes');
   bindDocumentReport('cotacoes');
+  if (options.action === 'create') {
+    await openDocumentCreateScreen('cotacoes');
+    return;
+  }
   await loadDocumentReport('cotacoes');
 }
 
-async function renderOrdersReport(container) {
+async function renderOrdersReport(container, options = {}) {
   container.innerHTML = renderDocumentReportShell('pedidos');
   bindDocumentReport('pedidos');
+  if (options.action === 'create') {
+    await openDocumentCreateScreen('pedidos');
+    return;
+  }
   await loadDocumentReport('pedidos');
 }
 
@@ -668,8 +701,10 @@ function renderDocumentReportShell(kind) {
   const title = kind === 'pedidos' ? 'Pedidos' : 'Cotacoes';
   const numberLabel = kind === 'pedidos' ? 'Pedido' : 'Cotacao';
   const createPermission = kind === 'pedidos' ? 'novo_pedido' : 'nova_cotacao';
+  const reportPermission = kind === 'pedidos' ? 'pedidos' : 'cotacoes';
   const createLabel = kind === 'pedidos' ? 'Novo pedido' : 'Nova cotacao';
   const canCreate = userHasModulePermission(createPermission);
+  const canReport = userHasModulePermission(reportPermission);
   const today = new Date();
   const from = new Date(today);
   from.setDate(from.getDate() - 30);
@@ -682,7 +717,7 @@ function renderDocumentReportShell(kind) {
         </div>
         ${canCreate ? `<button class="btn btn-primary" id="${kind}NewButton" type="button">${createLabel}</button>` : ''}
       </div>
-      <div class="field-grid">
+      ${canReport ? `<div class="field-grid">
         <label class="span-4">Pesquisar
           <input id="${kind}Search" placeholder="${numberLabel}, cliente, CNPJ, SAP ou vendedor">
         </label>
@@ -705,10 +740,10 @@ function renderDocumentReportShell(kind) {
       <div class="actions-row" style="margin-top: 12px;">
         <button class="btn btn-secondary" id="${kind}ExportButton" type="button">Baixar CSV</button>
         <p id="${kind}Message" class="form-message"></p>
-      </div>
+      </div>` : `<p id="${kind}Message" class="form-message">Use o botao ${createLabel} para criar um novo documento.</p>`}
     </section>
     <section class="panel" id="${kind}EditPanel" hidden></section>
-    <section class="panel" id="${kind}Results"><div class="empty-state">Carregando ${title.toLowerCase()}...</div></section>
+    <section class="panel" id="${kind}Results">${canReport ? `<div class="empty-state">Carregando ${title.toLowerCase()}...</div>` : `<div class="empty-state">Voce nao tem permissao para consultar o relatorio de ${title.toLowerCase()}.</div>`}</section>
   `;
 }
 
@@ -717,15 +752,21 @@ function bindDocumentReport(kind) {
   if (newButton) {
     newButton.addEventListener('click', () => openDocumentCreateScreen(kind));
   }
-  document.getElementById(`${kind}FilterButton`).addEventListener('click', () => loadDocumentReport(kind));
-  document.getElementById(`${kind}ExportButton`).addEventListener('click', () => exportDocumentReport(kind));
-  document.getElementById(`${kind}Search`).addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') loadDocumentReport(kind);
-  });
+  const filterButton = document.getElementById(`${kind}FilterButton`);
+  const exportButton = document.getElementById(`${kind}ExportButton`);
+  const searchInput = document.getElementById(`${kind}Search`);
+  if (filterButton) filterButton.addEventListener('click', () => loadDocumentReport(kind));
+  if (exportButton) exportButton.addEventListener('click', () => exportDocumentReport(kind));
+  if (searchInput) {
+    searchInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') loadDocumentReport(kind);
+    });
+  }
 }
 
 function userHasModulePermission(permission) {
   const session = getStoredSession() || {};
+  if (String(session.perfil || '').toUpperCase() === 'ADMIN') return true;
   const modules = session.modules || [];
   return !modules.length || modules.includes(permission);
 }
@@ -743,6 +784,11 @@ async function openDocumentCreateScreen(kind) {
 
 async function loadDocumentReport(kind) {
   const target = document.getElementById(`${kind}Results`);
+  const reportPermission = kind === 'pedidos' ? 'pedidos' : 'cotacoes';
+  if (!userHasModulePermission(reportPermission)) {
+    target.innerHTML = `<div class="empty-state">Voce nao tem permissao para consultar este relatorio.</div>`;
+    return;
+  }
   target.innerHTML = '<div class="empty-state">Carregando relatorio...</div>';
   try {
     const filters = getDocumentFilters(kind);

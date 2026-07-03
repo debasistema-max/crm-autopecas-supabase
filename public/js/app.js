@@ -12,8 +12,8 @@ const MODULES = {
 };
 
 const MODULE_ALIASES = {
-  orders: 'ordersReport',
-  quoteCreate: 'quoteReports'
+  orders: { module: 'ordersReport' },
+  quoteCreate: { module: 'quoteReports', action: 'create' }
 };
 
 let currentSession = null;
@@ -46,8 +46,8 @@ function bootstrapAppShell() {
 
   setupNavigation();
   const initialHash = location.hash.replace('#', '') || 'dashboard';
-  const initial = MODULE_ALIASES[initialHash] || initialHash;
-  openModule(MODULES[initial] ? initial : 'dashboard');
+  const initial = getModuleRoute(initialHash);
+  openModule(MODULES[initial.module] ? initialHash : 'dashboard');
 }
 
 function applySessionToShell() {
@@ -72,7 +72,8 @@ function applyNavigationVisibility() {
 }
 
 async function openModule(name) {
-  const moduleName = MODULE_ALIASES[name] || name;
+  const route = getModuleRoute(name);
+  const moduleName = route.module;
   const module = MODULES[moduleName] || MODULES.dashboard;
   const allowed = currentSession.modules || [];
   const content = document.getElementById('content');
@@ -91,7 +92,7 @@ async function openModule(name) {
     return;
   }
 
-  await module.render(content);
+  await module.render(content, { action: route.action });
   content.focus();
 }
 
@@ -111,7 +112,15 @@ function isCurrentUserAdmin() {
 }
 
 function hasModuleAccess(module, allowed) {
+  if (isCurrentUserAdmin()) return true;
   if (!allowed.length) return true;
   const permissions = Array.isArray(module.permission) ? module.permission : [module.permission];
   return permissions.some((permission) => allowed.includes(permission));
+}
+
+function getModuleRoute(name) {
+  const alias = MODULE_ALIASES[name];
+  if (!alias) return { module: name };
+  if (typeof alias === 'string') return { module: alias };
+  return alias;
 }

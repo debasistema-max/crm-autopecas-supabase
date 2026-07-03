@@ -2,10 +2,12 @@ let orderItems = [];
 let orderClientSearchTimer = null;
 let orderSelectedProduct = null;
 let orderImportPreviewItems = [];
+let orderCreateSaved = false;
 
 async function renderOrders(container) {
   orderItems = [];
   orderSelectedProduct = null;
+  orderCreateSaved = false;
   container.innerHTML = `
     <section class="sap-document">
       <div class="sap-titlebar">
@@ -212,6 +214,7 @@ async function renderOrders(container) {
 
   document.getElementById('saveOrderButton').addEventListener('click', saveCurrentOrder);
   document.getElementById('closeOrderButton').addEventListener('click', () => {
+    if (hasUnsavedOrderDraft() && !window.confirm('Existem alteracoes nao salvas. Deseja sair?')) return;
     openModule('ordersReport');
   });
   document.getElementById('orderAddSelectedProductButton').addEventListener('click', () => {
@@ -298,6 +301,7 @@ function clearOrderProductSelection() {
 }
 
 function addProductToOrder(product, forcedQuantity = null) {
+  orderCreateSaved = false;
   const existing = orderItems.find((item) => item.codigo === product.codigo);
   const qtyInput = document.getElementById('orderAddQuantity');
   const quantity = Number(forcedQuantity !== null ? forcedQuantity : (qtyInput ? qtyInput.value || 0 : 0));
@@ -581,6 +585,7 @@ async function saveCurrentOrder() {
     payload.total = total;
     const data = await supabaseCreateOrder(payload);
     orderItems = [];
+    orderCreateSaved = true;
     renderCart();
     message.style.color = 'var(--success)';
     message.textContent = 'Pedido ' + data.numero_pedido + ' salvo com sucesso. Documentos podem ser gerados em uma etapa separada.';
@@ -591,6 +596,26 @@ async function saveCurrentOrder() {
     button.disabled = false;
     button.textContent = 'Salvar';
   }
+}
+
+function hasUnsavedOrderDraft() {
+  if (orderCreateSaved) return false;
+  const fields = [
+    'orderClientSapCode',
+    'orderCnpj',
+    'orderClient',
+    'orderCadastroSearch',
+    'orderPhone',
+    'orderClientRef',
+    'orderAddress',
+    'orderCarrierSearch',
+    'orderCarrier',
+    'orderNotes'
+  ];
+  return orderItems.length > 0 || fields.some((id) => {
+    const field = document.getElementById(id);
+    return field && String(field.value || '').trim();
+  });
 }
 
 function clientSearchDigits(value) {
