@@ -43,6 +43,11 @@ function bootstrapAppShell() {
   document.getElementById('menuButton').addEventListener('click', () => {
     document.getElementById('sidebar').classList.toggle('is-open');
   });
+  window.addEventListener('hashchange', () => {
+    const requested = location.hash.replace('#', '') || 'dashboard';
+    const route = getModuleRoute(requested);
+    if (MODULES[route.module]) openModule(requested);
+  });
 
   setupNavigation();
   const initialHash = location.hash.replace('#', '') || 'dashboard';
@@ -79,7 +84,9 @@ async function openModule(name) {
   const content = document.getElementById('content');
   document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('is-active', item.dataset.module === moduleName));
   document.getElementById('pageTitle').textContent = module.title;
-  location.hash = moduleName;
+  if (location.hash !== `#${moduleName}`) {
+    history.replaceState(null, '', `#${moduleName}`);
+  }
   document.getElementById('sidebar').classList.remove('is-open');
 
   if (module.adminOnly && !isCurrentUserAdmin()) {
