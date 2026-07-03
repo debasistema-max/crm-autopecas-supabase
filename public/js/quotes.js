@@ -667,6 +667,9 @@ async function renderOrdersReport(container) {
 function renderDocumentReportShell(kind) {
   const title = kind === 'pedidos' ? 'Pedidos' : 'Cotacoes';
   const numberLabel = kind === 'pedidos' ? 'Pedido' : 'Cotacao';
+  const createPermission = kind === 'pedidos' ? 'novo_pedido' : 'nova_cotacao';
+  const createLabel = kind === 'pedidos' ? 'Novo pedido' : 'Nova cotacao';
+  const canCreate = userHasModulePermission(createPermission);
   const today = new Date();
   const from = new Date(today);
   from.setDate(from.getDate() - 30);
@@ -677,6 +680,7 @@ function renderDocumentReportShell(kind) {
           <h2>${title}</h2>
           <p>Relatorio de ${title.toLowerCase()} por periodo, cliente, vendedor e status.</p>
         </div>
+        ${canCreate ? `<button class="btn btn-primary" id="${kind}NewButton" type="button">${createLabel}</button>` : ''}
       </div>
       <div class="field-grid">
         <label class="span-4">Pesquisar
@@ -709,11 +713,32 @@ function renderDocumentReportShell(kind) {
 }
 
 function bindDocumentReport(kind) {
+  const newButton = document.getElementById(`${kind}NewButton`);
+  if (newButton) {
+    newButton.addEventListener('click', () => openDocumentCreateScreen(kind));
+  }
   document.getElementById(`${kind}FilterButton`).addEventListener('click', () => loadDocumentReport(kind));
   document.getElementById(`${kind}ExportButton`).addEventListener('click', () => exportDocumentReport(kind));
   document.getElementById(`${kind}Search`).addEventListener('keydown', (event) => {
     if (event.key === 'Enter') loadDocumentReport(kind);
   });
+}
+
+function userHasModulePermission(permission) {
+  const session = getStoredSession() || {};
+  const modules = session.modules || [];
+  return !modules.length || modules.includes(permission);
+}
+
+async function openDocumentCreateScreen(kind) {
+  const content = document.getElementById('content');
+  document.getElementById('pageTitle').textContent = kind === 'pedidos' ? 'Novo Pedido' : 'Nova Cotacao';
+  if (kind === 'pedidos') {
+    await renderOrders(content);
+  } else {
+    await renderCreateQuotation(content);
+  }
+  content.focus();
 }
 
 async function loadDocumentReport(kind) {
