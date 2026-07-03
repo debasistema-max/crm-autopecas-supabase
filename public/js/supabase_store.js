@@ -1,19 +1,32 @@
 async function supabaseLogin(usuario, senha) {
   if (!isSupabaseReady()) throw new Error('Supabase nao configurado.');
   const login = String(usuario || '').trim();
-  const email = login.includes('@') ? login : login + '@ipscrm.com';
-  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password: senha });
+  if (!login || !senha) throw new Error('Usuario ou senha invalidos.');
+  try {
+    const email = await supabaseResolveLoginEmail(login);
+    if (!email) throw new Error('INVALID_LOGIN');
+    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password: senha });
+    if (error) throw error;
+    const profile = await supabaseCurrentProfile(data.user.id);
+    await supabaseClient.from('logs').insert({
+      user_id: data.user.id,
+      usuario: profile.usuario,
+      acao: 'LOGIN',
+      entidade: 'auth',
+      id_entidade: data.user.id,
+      dados_novos: { email: data.user.email, ip: null }
+    });
+    return supabaseSessionFromProfile(data.user, profile);
+  } catch (error) {
+    throw new Error('Usuario ou senha invalidos.');
+  }
+}
+
+async function supabaseResolveLoginEmail(login) {
+  if (String(login || '').includes('@')) return String(login || '').trim();
+  const { data, error } = await supabaseClient.rpc('resolve_login_email', { login_text: login });
   if (error) throw error;
-  const profile = await supabaseCurrentProfile(data.user.id);
-  await supabaseClient.from('logs').insert({
-    user_id: data.user.id,
-    usuario: profile.usuario,
-    acao: 'LOGIN',
-    entidade: 'auth',
-    id_entidade: data.user.id,
-    dados_novos: { email: data.user.email, ip: null }
-  });
-  return supabaseSessionFromProfile(data.user, profile);
+  return data || null;
 }
 
 async function supabaseLogout() {
