@@ -141,6 +141,7 @@ async function loadPortalCadastrosReport() {
     document.getElementById('portalEmailPrincipal').value = report.settings.email_principal || '';
     target.innerHTML = renderPortalCadastrosReport(report);
     bindPortalCadastroPartnerButtons(report.recent || []);
+    bindCadastroAttachmentButtons();
     if (message && !message.textContent) message.textContent = '';
   } catch (error) {
     target.innerHTML = `<div class="empty-state compact-state">${escapeHtml(error.message)}</div>`;
@@ -182,6 +183,7 @@ function renderPortalCadastrosReportRows(rows) {
           <th>Codigo SAP</th>
           <th>Email</th>
           <th>Vendedor</th>
+          <th>Anexos</th>
           <th></th>
         </tr>
       </thead>
@@ -197,6 +199,7 @@ function renderPortalCadastrosReportRows(rows) {
             <td>${escapeHtml(row.codigo_sap_cliente || '')}</td>
             <td>${escapeHtml(row.email_compras || '')}</td>
             <td>${escapeHtml(row.vendedor || '')}</td>
+            <td>${renderCadastroAnexos(row.anexos)}</td>
             <td><button class="btn btn-secondary" type="button" data-send-cadastro-partner="${index}">Enviar para Parceiros</button></td>
           </tr>
         `).join('')}
@@ -245,7 +248,8 @@ function exportPortalCadastrosReport() {
     status: row.status || '',
     codigo_sap_cliente: row.codigo_sap_cliente || '',
     email_compras: row.email_compras || '',
-    vendedor: row.vendedor || ''
+    vendedor: row.vendedor || '',
+    anexos: getCadastroAnexos(row.anexos).map((item) => item.name || item.path || '').join(' | ')
   }));
   downloadCsv(`relatorio-cadastros-${formatDateInput(new Date())}.csv`, rows);
 }
@@ -270,6 +274,7 @@ function renderCadastrosTable(rows) {
             <th>Cidade/UF</th>
             <th>Contato</th>
             <th>Codigo SAP</th>
+            <th>Anexos</th>
             <th>Status</th>
             <th>Observacoes internas</th>
             <th></th>
@@ -303,6 +308,7 @@ function renderCadastroRow(row) {
       <td>
         <input data-cadastro-codigo-sap value="${escapeHtml(row.codigo_sap_cliente || '')}" placeholder="Codigo SAP">
       </td>
+      <td>${renderCadastroAnexos(row.anexos)}</td>
       <td>
         <select data-cadastro-status>
           ${cadastroStatusOptions().map((status) => `<option value="${escapeHtml(status)}"${status === row.status ? ' selected' : ''}>${escapeHtml(status)}</option>`).join('')}
@@ -337,6 +343,50 @@ function bindCadastroRows(reload) {
         message.textContent = error.message;
       } finally {
         button.disabled = false;
+      }
+    });
+  });
+  bindCadastroAttachmentButtons();
+}
+
+function getCadastroAnexos(anexos) {
+  return Array.isArray(anexos) ? anexos : [];
+}
+
+function renderCadastroAnexos(anexos) {
+  const files = getCadastroAnexos(anexos);
+  if (!files.length) return '<small>Nenhum anexo</small>';
+  return `
+    <div class="attachment-list">
+      ${files.map((file) => `
+        <button class="link-button" type="button" data-open-cadastro-attachment="${escapeHtml(file.path || '')}">
+          ${escapeHtml(file.label || file.name || 'Anexo')}
+        </button>
+      `).join('')}
+    </div>
+  `;
+}
+
+function bindCadastroAttachmentButtons() {
+  document.querySelectorAll('[data-open-cadastro-attachment]').forEach((button) => {
+    if (button.dataset.boundAttachment === 'true') return;
+    button.dataset.boundAttachment = 'true';
+    button.addEventListener('click', async () => {
+      const originalText = button.textContent;
+      button.disabled = true;
+      button.textContent = 'Abrindo...';
+      try {
+        const url = await supabaseCreateCadastroAttachmentSignedUrl(button.dataset.openCadastroAttachment);
+        window.open(url, '_blank', 'noopener');
+      } catch (error) {
+        const message = document.getElementById('cadastroMessage') || document.getElementById('portalAdminMessage');
+        if (message) {
+          message.style.color = 'var(--accent)';
+          message.textContent = error.message;
+        }
+      } finally {
+        button.disabled = false;
+        button.textContent = originalText;
       }
     });
   });

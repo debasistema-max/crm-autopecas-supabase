@@ -455,7 +455,7 @@ async function supabaseGetLogs(filters) {
 async function supabaseListCadastrosClientes(filters = {}) {
   let query = supabaseClient
     .from('cadastros_clientes')
-    .select('id, protocolo, status, codigo_sap_cliente, cnpj, razao_social, nome_fantasia, ie, telefone, whatsapp, email_compras, cidade, estado, endereco, numero, bairro, complemento, segmento, transportadora, prazo_desejado, vendedor, situacao_cadastral, cnae, possui_regime_especial, descricao_regime, observacoes, observacoes_internas, created_at')
+    .select('id, protocolo, status, codigo_sap_cliente, cnpj, razao_social, nome_fantasia, ie, telefone, whatsapp, email_compras, cidade, estado, endereco, numero, bairro, complemento, segmento, transportadora, prazo_desejado, vendedor, situacao_cadastral, cnae, possui_regime_especial, descricao_regime, observacoes, observacoes_internas, anexos, created_at')
     .order('created_at', { ascending: false })
     .limit(150);
   if (filters.status) query = query.eq('status', filters.status);
@@ -466,6 +466,18 @@ async function supabaseListCadastrosClientes(filters = {}) {
   const { data, error } = await query;
   if (error) throw error;
   return data || [];
+}
+
+async function supabaseCreateCadastroAttachmentSignedUrl(path) {
+  const cleanPath = String(path || '').trim();
+  if (!cleanPath) throw new Error('Anexo sem caminho no Storage.');
+  const { data, error } = await supabaseClient
+    .storage
+    .from('cadastros-clientes')
+    .createSignedUrl(cleanPath, 60 * 5);
+  if (error) throw error;
+  if (!data || !data.signedUrl) throw new Error('Nao foi possivel gerar o link do anexo.');
+  return data.signedUrl;
 }
 
 async function supabaseGetPortalCadastroSettings() {
@@ -500,7 +512,7 @@ async function supabaseGetCadastrosPortalReport(filters = {}) {
   const totalPromise = buildCadastrosPortalQuery('id', { count: 'exact', head: true }, filters);
   const statusPromises = statuses.map((status) => buildCadastrosPortalQuery('id', { count: 'exact', head: true }, filters).eq('status', status));
   const recentPromise = buildCadastrosPortalQuery(
-    'id, protocolo, status, codigo_sap_cliente, cnpj, razao_social, nome_fantasia, telefone, whatsapp, email_compras, cidade, estado, endereco, numero, bairro, complemento, observacoes, vendedor, created_at',
+    'id, protocolo, status, codigo_sap_cliente, cnpj, razao_social, nome_fantasia, telefone, whatsapp, email_compras, cidade, estado, endereco, numero, bairro, complemento, observacoes, vendedor, anexos, created_at',
     {},
     filters
   )

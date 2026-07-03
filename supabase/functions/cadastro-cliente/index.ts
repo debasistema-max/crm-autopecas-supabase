@@ -15,7 +15,7 @@ Deno.serve(async (req) => {
     if (!payload.razao_social || !payload.email_compras) {
       return json({ ok: false, error: 'Razao social e email de compras sao obrigatorios.' }, 400);
     }
-    validateAttachments(payload.anexos || []);
+    const anexos = normalizeAttachments(payload.anexos || []);
 
     const supabase = getSupabaseConfig();
     ensureEmailConfigured();
@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
     const data = Array.isArray(rows) ? rows[0] : rows;
     if (!data) throw new Error('Cadastro nao retornou protocolo.');
 
-    const attachments = await uploadAttachments(supabase, data.protocolo, payload.anexos || []);
+    const attachments = await uploadAttachments(supabase, data.protocolo, anexos);
     if (attachments.length) {
       await supabaseFetch(
         supabase,
@@ -59,7 +59,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    const emailResult = await sendEmails(supabase, data, payload);
+    const emailResult = await sendEmails(supabase, data, payload, anexos);
     return json({ ok: true, data: Object.assign({}, data, { anexos: attachments, email: emailResult }) });
   } catch (error) {
     return json({ ok: false, error: error.message || 'Erro ao enviar cadastro.' }, 500);
@@ -69,7 +69,8 @@ Deno.serve(async (req) => {
 async function sendEmails(
   config: { url: string; key: string },
   row: Record<string, string>,
-  payload: Record<string, string>
+  payload: Record<string, string>,
+  attachments: CadastroAttachment[]
 ) {
   const from = getEmailFrom();
   const to = await getPortalCadastroEmailTo(config);
@@ -90,7 +91,7 @@ async function sendEmails(
     `CNAE: ${payload.cnae || ''}`,
     `Regime especial: ${payload.possui_regime_especial ? 'Sim' : 'Nao'}`,
     `Descricao regime: ${payload.descricao_regime || ''}`,
-    `Anexos recebidos: ${Array.isArray(payload.anexos) ? payload.anexos.length : 0}`
+    `Anexos recebidos: ${attachments.length}`
   ].join('\n');
 
   const internalEmail = await sendEmail({
@@ -98,7 +99,7 @@ async function sendEmails(
     to,
     subject,
     text,
-    attachments: Array.isArray(payload.anexos) ? payload.anexos : []
+    attachments
   });
   if (!internalEmail.ok) {
     console.error('Falha ao enviar email ao financeiro', internalEmail.error);
@@ -155,6 +156,12 @@ type EmailAttachment = {
   name?: string;
   type?: string;
   content?: string;
+};
+
+type CadastroAttachment = EmailAttachment & {
+  field?: unknown;
+  label?: unknown;
+  size?: number;
 };
 
 type EmailMessage = {
@@ -244,29 +251,41 @@ function getSupabaseConfig() {
   return { url, key };
 }
 
-function validateAttachments(attachments: unknown[]) {
-  if (!Array.isArray(attachments)) throw new Error('Lista de anexos invalida.');
-  if (attachments.length > 5) throw new Error('Envie no maximo 5 arquivos.');
+function normalizeAttachments(input: unknown[]) {
+  if (!Array.isArray(input)) throw new Error('Lista de anexos invalida.');
+  if (input.length > 5) throw new Error('Envie no maximo 5 arquivos.');
   let totalBytes = 0;
-  for (const attachment of attachments as Array<Record<string, unknown>>) {
+  const attachments: CadastroAttachment[] = [];
+  for (const attachment of input as Array<Record<string, unknown>>) {
     const size = Number(attachment.size || 0);
     const type = String(attachment.type || '');
+    const content = String(attachment.content || '').replace(/\s/g, '');
+    const name = sanitizeFileName(String(attachment.name || 'documento'));
     totalBytes += size;
-    if (size > 5 * 1024 * 1024) throw new Error(`Arquivo ${attachment.name || ''} ultrapassa 5 MB.`);
+    if (size > 5 * 1024 * 1024) throw new Error(`Arquivo ${name} ultrapassa 5 MB.`);
     if (totalBytes > 15 * 1024 * 1024) throw new Error('O total dos arquivos nao pode ultrapassar 15 MB.');
     if (!['application/pdf', 'image/jpeg', 'image/png', 'image/webp'].includes(type)) {
-      throw new Error(`Arquivo ${attachment.name || ''} deve ser PDF, JPG, PNG ou WEBP.`);
+      throw new Error(`Arquivo ${name} deve ser PDF, JPG, PNG ou WEBP.`);
     }
-    if (!attachment.content || typeof attachment.content !== 'string') {
-      throw new Error(`Arquivo ${attachment.name || ''} sem conteudo.`);
+    if (!content) {
+      throw new Error(`Arquivo ${name} sem conteudo.`);
     }
+    attachments.push({
+      field: attachment.field,
+      label: attachment.label,
+      name,
+      type,
+      size,
+      content
+    });
   }
+  return attachments;
 }
 
 async function uploadAttachments(
   config: { url: string; key: string },
   protocolo: string,
-  attachments: Array<Record<string, unknown>>
+  attachments: CadastroAttachment[]
 ) {
   const uploaded = [];
   for (const attachment of attachments) {

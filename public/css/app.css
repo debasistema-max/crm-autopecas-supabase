@@ -891,6 +891,31 @@ td input {
   padding: 8px 10px;
 }
 
+.attachment-list {
+  display: grid;
+  gap: 6px;
+  min-width: 140px;
+}
+
+.link-button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--primary);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
+.link-button:disabled {
+  opacity: 0.65;
+}
+
 button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
