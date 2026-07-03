@@ -21,6 +21,7 @@ async function renderUsers(container) {
           </label>
           <div class="span-12 actions-row">
             <button class="btn btn-primary" type="submit">Salvar usuario</button>
+            <button class="btn btn-ghost" id="clearUserFormButton" type="button">Novo usuario</button>
             <p id="userMessage" class="form-message"></p>
           </div>
         </form>
@@ -28,6 +29,8 @@ async function renderUsers(container) {
       <section class="panel">${renderUsersTable(users)}</section>
     `;
     document.getElementById('userForm').addEventListener('submit', saveUserFromForm);
+    document.getElementById('clearUserFormButton').addEventListener('click', clearUserForm);
+    bindUserEditButtons(users);
   } catch (error) {
     container.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
   }
@@ -38,9 +41,9 @@ function renderUsersTable(users) {
   return `
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Usuario</th><th>Nome</th><th>Email</th><th>Perfil</th><th>Status</th><th>Ultimo login</th></tr></thead>
+        <thead><tr><th>Usuario</th><th>Nome</th><th>Email</th><th>Perfil</th><th>Status</th><th>Ultimo login</th><th></th></tr></thead>
         <tbody>
-          ${users.map((user) => `
+          ${users.map((user, index) => `
             <tr>
               <td>${escapeHtml(user.usuario)}</td>
               <td>${escapeHtml(user.nome)}</td>
@@ -48,12 +51,44 @@ function renderUsersTable(users) {
               <td>${escapeHtml(user.perfil)}</td>
               <td><span class="status-pill ${user.ativo ? 'ok' : 'warn'}">${user.ativo ? 'Ativo' : 'Inativo'}</span></td>
               <td>${escapeHtml(user.ultimo_login)}</td>
+              <td><button class="btn btn-secondary" type="button" data-edit-user="${index}">Editar</button></td>
             </tr>
           `).join('')}
         </tbody>
       </table>
     </div>
   `;
+}
+
+function bindUserEditButtons(users) {
+  document.querySelectorAll('[data-edit-user]').forEach((button) => {
+    button.addEventListener('click', () => fillUserForm(users[Number(button.dataset.editUser)]));
+  });
+}
+
+function fillUserForm(user) {
+  if (!user) return;
+  document.getElementById('userId').value = user.id || '';
+  document.getElementById('newUserLogin').value = user.usuario || '';
+  document.getElementById('newUserName').value = user.nome || '';
+  document.getElementById('newUserEmail').value = user.email || '';
+  document.getElementById('newUserProfile').value = user.perfil || 'VENDEDOR';
+  document.getElementById('newUserActive').value = user.ativo ? 'true' : 'false';
+  document.getElementById('newUserPassword').value = '';
+  document.getElementById('userMessage').style.color = 'var(--muted)';
+  document.getElementById('userMessage').textContent = 'Editando usuario ' + (user.usuario || '') + '.';
+  document.getElementById('userForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function clearUserForm() {
+  document.getElementById('userId').value = '';
+  document.getElementById('newUserLogin').value = '';
+  document.getElementById('newUserName').value = '';
+  document.getElementById('newUserEmail').value = '';
+  document.getElementById('newUserProfile').value = 'VENDEDOR';
+  document.getElementById('newUserActive').value = 'true';
+  document.getElementById('newUserPassword').value = '';
+  document.getElementById('userMessage').textContent = '';
 }
 
 async function saveUserFromForm(event) {
