@@ -94,7 +94,12 @@ function clearUserForm() {
 async function saveUserFromForm(event) {
   event.preventDefault();
   const message = document.getElementById('userMessage');
+  const button = event.submitter || document.querySelector('#userForm button[type="submit"]');
   message.textContent = 'Salvando...';
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Salvando...';
+  }
   try {
     await supabaseSaveUser({
       id_usuario: document.getElementById('userId').value,
@@ -111,6 +116,11 @@ async function saveUserFromForm(event) {
   } catch (error) {
     message.style.color = 'var(--accent)';
     message.textContent = error.message;
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = 'Salvar usuario';
+    }
   }
 }
 

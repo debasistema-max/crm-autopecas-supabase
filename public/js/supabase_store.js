@@ -5,11 +5,25 @@ async function supabaseLogin(usuario, senha) {
   const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password: senha });
   if (error) throw error;
   const profile = await supabaseCurrentProfile(data.user.id);
+  await supabaseClient.from('logs').insert({
+    user_id: data.user.id,
+    usuario: profile.usuario,
+    acao: 'LOGIN',
+    entidade: 'auth',
+    id_entidade: data.user.id,
+    dados_novos: { email: data.user.email, ip: null }
+  });
   return supabaseSessionFromProfile(data.user, profile);
 }
 
 async function supabaseLogout() {
-  if (isSupabaseReady()) await supabaseClient.auth.signOut();
+  if (!isSupabaseReady()) return;
+  try {
+    await supabaseLog('LOGOUT', 'auth', getSessionId(), { ip: null });
+  } catch (error) {
+    console.warn(error);
+  }
+  await supabaseClient.auth.signOut();
 }
 
 async function supabaseValidateSession() {
@@ -53,62 +67,9 @@ async function supabaseSessionFromProfile(user, profile) {
 }
 
 async function supabaseGetDashboard() {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const [
-    { data: orders, error: ordersError },
-    { data: orderSummaryRows, error: orderSummaryError },
-    { data: quotationSummaryRows, error: quotationSummaryError },
-    { count: missingCount, error: missingError },
-    { count: zeroCount, error: zeroError }
-  ] = await Promise.all([
-    supabaseClient.from('orders').select('numero_pedido, cliente, vendedor, status, total, created_at').order('created_at', { ascending: false }).limit(8),
-    supabaseClient.from('orders').select('status, total, created_at').limit(10000),
-    supabaseClient.from('quotations').select('status, total, created_at').limit(10000),
-    supabaseClient.from('products').select('codigo', { count: 'exact', head: true }).eq('status_cadastro', 'NAO_CADASTRADO'),
-    supabaseClient.from('products').select('codigo', { count: 'exact', head: true }).lte('estoque_quantidade', 0)
-  ]);
-  if (ordersError || orderSummaryError || quotationSummaryError || missingError || zeroError) {
-    throw ordersError || orderSummaryError || quotationSummaryError || missingError || zeroError;
-  }
-  const pedidosHoje = (orders || []).filter((order) => new Date(order.created_at) >= today);
-  return {
-    pedidosHoje: pedidosHoje.length,
-    totalHoje: pedidosHoje.reduce((sum, order) => sum + Number(order.total || 0), 0),
-    ultimosPedidos: orders || [],
-    resumoPedidos: buildDocumentStatusSummary(orderSummaryRows || [], {
-      aberto: ['NOVO', 'EM_ANALISE'],
-      efetivado: ['APROVADO', 'FATURADO'],
-      cancelado: ['CANCELADO']
-    }),
-    resumoCotacoes: buildDocumentStatusSummary(quotationSummaryRows || [], {
-      aberto: ['NOVA', 'ENVIADA'],
-      efetivado: ['APROVADA', 'CONVERTIDA'],
-      cancelado: ['CANCELADA']
-    }),
-    produtosSemCadastro: missingCount || 0,
-    estoqueZerado: zeroCount || 0
-  };
-}
-
-function buildDocumentStatusSummary(rows, groups) {
-  const summary = {
-    total: { count: 0, value: 0 },
-    aberto: { count: 0, value: 0 },
-    efetivado: { count: 0, value: 0 },
-    cancelado: { count: 0, value: 0 }
-  };
-  (rows || []).forEach((row) => {
-    const value = Number(row.total || 0);
-    summary.total.count += 1;
-    summary.total.value += value;
-    Object.entries(groups).forEach(([key, statuses]) => {
-      if (!statuses.includes(row.status)) return;
-      summary[key].count += 1;
-      summary[key].value += value;
-    });
-  });
-  return summary;
+  const { data, error } = await supabaseClient.rpc('get_dashboard_summary');
+  if (error) throw error;
+  return data || {};
 }
 
 async function supabaseSearchProducts(params) {
@@ -126,16 +87,13 @@ async function supabaseSearchProducts(params) {
 }
 
 async function supabaseListProductFilters() {
-  const { data, error } = await supabaseClient
-    .from('products')
-    .select('grupo, categoria')
-    .limit(10000);
+  const cached = getStaticCache('productFilters', 10 * 60 * 1000);
+  if (cached) return cached;
+  const { data, error } = await supabaseClient.rpc('get_product_filters');
   if (error) throw error;
-  const rows = data || [];
-  return {
-    grupos: uniqueSorted(rows.map((row) => row.grupo)),
-    linhas: uniqueSorted(rows.map((row) => row.categoria))
-  };
+  const filters = data || { grupos: [], linhas: [] };
+  setStaticCache('productFilters', filters);
+  return filters;
 }
 
 async function supabaseListProducts(params = {}) {
@@ -181,6 +139,29 @@ function uniqueSorted(values) {
 
 function escapePostgrestFilter(value) {
   return String(value || '').replace(/[(),]/g, ' ');
+}
+
+function getStaticCache(key, maxAgeMs) {
+  try {
+    const raw = localStorage.getItem('crmStaticCache:' + key);
+    if (!raw) return null;
+    const cached = JSON.parse(raw);
+    if (!cached || Date.now() - Number(cached.createdAt || 0) > maxAgeMs) return null;
+    return cached.value;
+  } catch (error) {
+    return null;
+  }
+}
+
+function setStaticCache(key, value) {
+  try {
+    localStorage.setItem('crmStaticCache:' + key, JSON.stringify({
+      createdAt: Date.now(),
+      value
+    }));
+  } catch (error) {
+    console.warn(error);
+  }
 }
 
 function onlyDigits(value) {
@@ -254,28 +235,20 @@ async function supabaseUpdateQuotationReport(payload = {}) {
 async function supabaseUpdateOrderStatus(payload = {}) {
   if (!payload.id) throw new Error('Pedido nao informado.');
   if (!payload.status) throw new Error('Status nao informado.');
-  const { data, error } = await supabaseClient
-    .from('orders')
-    .update({ status: payload.status })
-    .eq('id', payload.id)
-    .select('id, numero_pedido, status')
-    .single();
+  const { data, error } = await supabaseClient.rpc('update_document_status', {
+    payload: { type: 'pedido', id: payload.id, status: payload.status }
+  });
   if (error) throw error;
-  await supabaseLog('ATUALIZAR_STATUS_PEDIDO', 'orders', payload.id, payload);
   return data || {};
 }
 
 async function supabaseUpdateQuotationStatus(payload = {}) {
   if (!payload.id) throw new Error('Cotacao nao informada.');
   if (!payload.status) throw new Error('Status nao informado.');
-  const { data, error } = await supabaseClient
-    .from('quotations')
-    .update({ status: payload.status })
-    .eq('id', payload.id)
-    .select('id, numero_cotacao, status')
-    .single();
+  const { data, error } = await supabaseClient.rpc('update_document_status', {
+    payload: { type: 'cotacao', id: payload.id, status: payload.status }
+  });
   if (error) throw error;
-  await supabaseLog('ATUALIZAR_STATUS_COTACAO', 'quotations', payload.id, payload);
   return data || {};
 }
 
@@ -287,9 +260,13 @@ function sanitizeDocumentItemsUpdate(payload = {}) {
     id: payload.id,
     items: items.map((item) => ({
       codigo: String(item.codigo || '').trim(),
-      quantidade: Math.max(1, Number(item.quantidade || 1)),
+      quantidade: Number(item.quantidade || 0),
       desconto_percentual: Math.max(0, Number(item.desconto_percentual || 0))
-    })).filter((item) => item.codigo)
+    })).filter((item, index) => {
+      if (!item.codigo) throw new Error('Item ' + (index + 1) + ': codigo do produto ausente.');
+      if (Number(item.quantidade || 0) <= 0) throw new Error('Item ' + (index + 1) + ': quantidade deve ser maior que zero.');
+      return true;
+    })
   };
 }
 
@@ -618,6 +595,15 @@ async function supabaseSaveUser(payload) {
   }
 
   let userId = payload.id_usuario || payload.id || '';
+  const [{ data: sameUser, error: sameUserError }, { data: sameEmail, error: sameEmailError }] = await Promise.all([
+    supabaseClient.from('profiles').select('id').eq('usuario', profile.usuario).maybeSingle(),
+    supabaseClient.from('profiles').select('id').eq('email', profile.email).maybeSingle()
+  ]);
+  if (sameUserError) throw sameUserError;
+  if (sameEmailError) throw sameEmailError;
+  if (sameUser && sameUser.id !== userId) throw new Error('Ja existe um usuario com este login.');
+  if (sameEmail && sameEmail.id !== userId) throw new Error('Ja existe um usuario com este email.');
+
   if (!userId) {
     if (!payload.senha) throw new Error('Informe uma senha inicial para novo usuario.');
     const previousSession = await supabaseClient.auth.getSession();

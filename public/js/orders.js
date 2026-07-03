@@ -375,30 +375,57 @@ async function previewOrderImportItems() {
       orderImportPreviewItems.push({ code, quantity: item.quantity, product });
     }
     target.innerHTML = renderOrderImportItemsPreview();
-    target.querySelectorAll('[data-order-import-qty]').forEach((input) => {
-      input.addEventListener('change', () => {
-        orderImportPreviewItems[Number(input.dataset.orderImportQty)].quantity = Math.max(1, Number(input.value || 1));
-      });
-    });
+    bindOrderImportPreviewEvents();
     applyButton.disabled = !orderImportPreviewItems.some((item) => item.product);
   } catch (error) {
     target.innerHTML = `<div class="empty-state compact-state">${escapeHtml(error.message)}</div>`;
   }
 }
 
+function bindOrderImportPreviewEvents() {
+  const target = document.getElementById('orderImportItemsPreview');
+  target.querySelectorAll('[data-order-import-qty]').forEach((input) => {
+    input.addEventListener('change', () => {
+      orderImportPreviewItems[Number(input.dataset.orderImportQty)].quantity = Math.max(1, Number(input.value || 1));
+      target.innerHTML = renderOrderImportItemsPreview();
+      bindOrderImportPreviewEvents();
+    });
+  });
+  target.querySelectorAll('[data-order-import-remove]').forEach((button) => {
+    button.addEventListener('click', () => {
+      orderImportPreviewItems.splice(Number(button.dataset.orderImportRemove), 1);
+      target.innerHTML = renderOrderImportItemsPreview();
+      bindOrderImportPreviewEvents();
+      document.getElementById('orderApplyImportItemsButton').disabled = !orderImportPreviewItems.some((item) => item.product);
+    });
+  });
+}
+
 function renderOrderImportItemsPreview() {
+  const found = orderImportPreviewItems.filter((item) => item.product);
+  const missing = orderImportPreviewItems.length - found.length;
+  const totalQty = found.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+  const subtotal = found.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.product.preco || 0), 0);
   return `
+    <div class="import-summary">
+      <article><span>Encontrados</span><strong>${found.length}</strong></article>
+      <article><span>Nao encontrados</span><strong>${missing}</strong></article>
+      <article><span>Quantidade</span><strong>${totalQty}</strong></article>
+      <article><span>Subtotal previsto</span><strong>${money(subtotal)}</strong></article>
+    </div>
     <div class="table-wrap compact-table">
       <table>
-        <thead><tr><th>Codigo</th><th>Produto encontrado</th><th>Estoque</th><th>Preco</th><th>Quantidade</th></tr></thead>
+        <thead><tr><th>Status</th><th>Codigo</th><th>Produto encontrado</th><th>Estoque</th><th>Preco</th><th>Quantidade</th><th></th></tr></thead>
         <tbody>
           ${orderImportPreviewItems.map((item, index) => `
             <tr>
+              <td>${item.product ? 'OK' : 'Nao encontrado'}</td>
               <td>${escapeHtml(item.code)}</td>
               <td>${item.product ? escapeHtml(item.product.descricao || '') : '<strong>Nao encontrado</strong>'}</td>
               <td>${item.product ? escapeHtml(item.product.estoque || '0') : '-'}</td>
               <td>${item.product ? money(Number(item.product.preco || 0)) : '-'}</td>
               <td><input type="number" min="1" value="${escapeHtml(item.quantity)}" data-order-import-qty="${index}" ${item.product ? '' : 'disabled'}></td>
+              <td><button class="sap-remove-button" type="button" data-order-import-remove="${index}" title="Remover">-</button></td>
             </tr>
           `).join('')}
         </tbody>
@@ -507,9 +534,28 @@ function renderSapTotals(subtotal, discount, total) {
   `;
 }
 
+function validateCommercialDocument(payload, label) {
+  const docLabel = label || 'documento';
+  if (!String(payload.cliente || '').trim()) {
+    throw new Error('Informe o cliente antes de salvar ' + docLabel + '.');
+  }
+  if (!Array.isArray(payload.items) || !payload.items.length) {
+    throw new Error('Adicione pelo menos 1 item antes de salvar ' + docLabel + '.');
+  }
+  payload.items.forEach((item, index) => {
+    const prefix = 'Item ' + (index + 1) + ': ';
+    if (!String(item.codigo || '').trim()) throw new Error(prefix + 'codigo do produto ausente.');
+    if (Number(item.quantidade || 0) <= 0) throw new Error(prefix + 'quantidade deve ser maior que zero.');
+    if (Number(item.preco || 0) <= 0) throw new Error(prefix + 'preco invalido.');
+  });
+}
+
 async function saveCurrentOrder() {
   const message = document.getElementById('orderMessage');
+  const button = document.getElementById('saveOrderButton');
   message.textContent = '';
+  button.disabled = true;
+  button.textContent = 'Salvando...';
   try {
     const payload = {
       sessionId: getSessionId(),
@@ -527,6 +573,7 @@ async function saveCurrentOrder() {
       generateDocuments: false,
       items: orderItems
     };
+    validateCommercialDocument(payload, 'o pedido');
     const subtotal = orderItems.reduce((sum, item) => sum + item.preco * item.quantidade, 0);
     const total = orderItems.reduce((sum, item) => sum + item.preco * item.quantidade * (1 - item.desconto_percentual / 100), 0);
     payload.subtotal = subtotal;
@@ -540,6 +587,9 @@ async function saveCurrentOrder() {
   } catch (error) {
     message.style.color = 'var(--accent)';
     message.textContent = error.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Salvar';
   }
 }
 

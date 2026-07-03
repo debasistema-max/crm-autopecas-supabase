@@ -342,30 +342,57 @@ async function previewQuoteImportItems() {
       quoteImportPreviewItems.push({ code, quantity: item.quantity, product });
     }
     target.innerHTML = renderQuoteImportItemsPreview();
-    target.querySelectorAll('[data-quote-import-qty]').forEach((input) => {
-      input.addEventListener('change', () => {
-        quoteImportPreviewItems[Number(input.dataset.quoteImportQty)].quantity = Math.max(1, Number(input.value || 1));
-      });
-    });
+    bindQuoteImportPreviewEvents();
     applyButton.disabled = !quoteImportPreviewItems.some((item) => item.product);
   } catch (error) {
     target.innerHTML = `<div class="empty-state compact-state">${escapeHtml(error.message)}</div>`;
   }
 }
 
+function bindQuoteImportPreviewEvents() {
+  const target = document.getElementById('quoteImportItemsPreview');
+  target.querySelectorAll('[data-quote-import-qty]').forEach((input) => {
+    input.addEventListener('change', () => {
+      quoteImportPreviewItems[Number(input.dataset.quoteImportQty)].quantity = Math.max(1, Number(input.value || 1));
+      target.innerHTML = renderQuoteImportItemsPreview();
+      bindQuoteImportPreviewEvents();
+    });
+  });
+  target.querySelectorAll('[data-quote-import-remove]').forEach((button) => {
+    button.addEventListener('click', () => {
+      quoteImportPreviewItems.splice(Number(button.dataset.quoteImportRemove), 1);
+      target.innerHTML = renderQuoteImportItemsPreview();
+      bindQuoteImportPreviewEvents();
+      document.getElementById('quoteApplyImportItemsButton').disabled = !quoteImportPreviewItems.some((item) => item.product);
+    });
+  });
+}
+
 function renderQuoteImportItemsPreview() {
+  const found = quoteImportPreviewItems.filter((item) => item.product);
+  const missing = quoteImportPreviewItems.length - found.length;
+  const totalQty = found.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+  const subtotal = found.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.product.preco || 0), 0);
   return `
+    <div class="import-summary">
+      <article><span>Encontrados</span><strong>${found.length}</strong></article>
+      <article><span>Nao encontrados</span><strong>${missing}</strong></article>
+      <article><span>Quantidade</span><strong>${totalQty}</strong></article>
+      <article><span>Subtotal previsto</span><strong>${money(subtotal)}</strong></article>
+    </div>
     <div class="table-wrap compact-table">
       <table>
-        <thead><tr><th>Codigo</th><th>Produto encontrado</th><th>Estoque</th><th>Preco</th><th>Quantidade</th></tr></thead>
+        <thead><tr><th>Status</th><th>Codigo</th><th>Produto encontrado</th><th>Estoque</th><th>Preco</th><th>Quantidade</th><th></th></tr></thead>
         <tbody>
           ${quoteImportPreviewItems.map((item, index) => `
             <tr>
+              <td>${item.product ? 'OK' : 'Nao encontrado'}</td>
               <td>${escapeHtml(item.code)}</td>
               <td>${item.product ? escapeHtml(item.product.descricao || '') : '<strong>Nao encontrado</strong>'}</td>
               <td>${item.product ? escapeHtml(item.product.estoque || '0') : '-'}</td>
               <td>${item.product ? money(Number(item.product.preco || 0)) : '-'}</td>
               <td><input type="number" min="1" value="${escapeHtml(item.quantity)}" data-quote-import-qty="${index}" ${item.product ? '' : 'disabled'}></td>
+              <td><button class="sap-remove-button" type="button" data-quote-import-remove="${index}" title="Remover">-</button></td>
             </tr>
           `).join('')}
         </tbody>
@@ -467,7 +494,10 @@ function renderSapQuoteItemsTable(items) {
 
 async function saveCurrentQuote() {
   const message = document.getElementById('quoteMessage');
+  const button = document.getElementById('saveQuoteButton');
   message.textContent = '';
+  button.disabled = true;
+  button.textContent = 'Salvando...';
   try {
     const payload = {
       sessionId: getSessionId(),
@@ -484,6 +514,7 @@ async function saveCurrentQuote() {
       observacao: document.getElementById('quoteNotes').value,
       items: quoteItems
     };
+    validateCommercialDocument(payload, 'a cotacao');
     const data = await supabaseCreateQuotation(payload);
     quoteItems = [];
     renderQuoteCart();
@@ -492,6 +523,9 @@ async function saveCurrentQuote() {
   } catch (error) {
     message.style.color = 'var(--accent)';
     message.textContent = error.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Salvar';
   }
 }
 
@@ -749,6 +783,7 @@ function showDocumentEditForm(kind, row) {
   const dateLabel = kind === 'pedidos' ? 'Dt.Pedido' : 'Dt.Cotacao';
   const regionValue = row.regiao === 'PR' ? '01 - MATRIZ - PR' : '02 - FILIAL - SP';
   window[`${kind}EditingItems`] = normalizeDocumentItems(row[itemsKey] || []);
+  window[`${kind}EditDirty`] = false;
   panel.hidden = false;
   panel.innerHTML = `
     <section class="sap-document">
@@ -856,6 +891,7 @@ function showDocumentEditForm(kind, row) {
   document.getElementById(`${kind}EditConfirmButton`).addEventListener('click', () => updateDocumentStatus(kind, row.id, getDocumentConfirmedStatus(kind)));
   document.getElementById(`${kind}EditCancelDocumentButton`).addEventListener('click', () => updateDocumentStatus(kind, row.id, getDocumentCanceledStatus(kind)));
   document.getElementById(`${kind}EditCloseButton`).addEventListener('click', () => {
+    if (window[`${kind}EditDirty`] && !window.confirm('Existem alteracoes nao salvas. Deseja sair?')) return;
     panel.hidden = true;
     panel.innerHTML = '';
   });
@@ -895,18 +931,21 @@ function renderDocumentEditItems(kind) {
   target.querySelectorAll('[data-document-edit-qty]').forEach((input) => {
     input.addEventListener('change', () => {
       items[Number(input.dataset.documentEditQty)].quantidade = Math.max(1, Number(input.value || 1));
+      window[`${kind}EditDirty`] = true;
       renderDocumentEditItems(kind);
     });
   });
   target.querySelectorAll('[data-document-edit-discount]').forEach((input) => {
     input.addEventListener('change', () => {
       items[Number(input.dataset.documentEditDiscount)].desconto_percentual = Math.max(0, Number(input.value || 0));
+      window[`${kind}EditDirty`] = true;
       renderDocumentEditItems(kind);
     });
   });
   target.querySelectorAll('[data-document-edit-remove]').forEach((button) => {
     button.addEventListener('click', () => {
       items.splice(Number(button.dataset.documentEditRemove), 1);
+      window[`${kind}EditDirty`] = true;
       renderDocumentEditItems(kind);
     });
   });
@@ -980,6 +1019,7 @@ function addProductToDocumentEdit(kind, product) {
     });
   }
   window[`${kind}EditingItems`] = items;
+  window[`${kind}EditDirty`] = true;
   const namePreview = document.getElementById(`${kind}EditProductNamePreview`);
   const groupPreview = document.getElementById(`${kind}EditProductGroupPreview`);
   if (namePreview) namePreview.value = product.descricao || '';
@@ -989,8 +1029,11 @@ function addProductToDocumentEdit(kind, product) {
 
 async function saveDocumentEdit(kind) {
   const message = document.getElementById(`${kind}EditMessage`);
+  const button = document.getElementById(`${kind}EditSaveButton`);
   message.style.color = 'var(--muted)';
   message.textContent = 'Salvando alteracoes...';
+  button.disabled = true;
+  button.textContent = 'Salvando...';
   try {
     const payload = {
       id: document.getElementById(`${kind}EditId`).value,
@@ -1003,17 +1046,25 @@ async function saveDocumentEdit(kind) {
     }
     message.style.color = 'var(--success)';
     message.textContent = 'Alteracoes salvas.';
+    window[`${kind}EditDirty`] = false;
     await loadDocumentReport(kind);
   } catch (error) {
     message.style.color = 'var(--accent)';
     message.textContent = error.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Salvar itens';
   }
 }
 
 async function updateDocumentStatus(kind, id, status) {
   const message = document.getElementById(`${kind}EditMessage`);
+  const confirmButton = document.getElementById(`${kind}EditConfirmButton`);
+  const cancelButton = document.getElementById(`${kind}EditCancelDocumentButton`);
   message.style.color = 'var(--muted)';
   message.textContent = 'Atualizando status...';
+  if (confirmButton) confirmButton.disabled = true;
+  if (cancelButton) cancelButton.disabled = true;
   try {
     const data = kind === 'pedidos'
       ? await supabaseUpdateOrderStatus({ id, status })
@@ -1026,6 +1077,9 @@ async function updateDocumentStatus(kind, id, status) {
   } catch (error) {
     message.style.color = 'var(--accent)';
     message.textContent = error.message;
+  } finally {
+    if (confirmButton) confirmButton.disabled = false;
+    if (cancelButton) cancelButton.disabled = false;
   }
 }
 

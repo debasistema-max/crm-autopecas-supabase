@@ -22,14 +22,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
-  bootstrapAppShell();
-
   validateCurrentSession()
     .then((session) => {
       if (!session) throw new Error('Sessao expirada.');
       currentSession = session;
-      applySessionToShell();
-      applyNavigationVisibility();
+      bootstrapAppShell();
     })
     .catch(() => {
       clearStoredSession();
