@@ -3,6 +3,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS'
 };
+const EMAIL_TIMEOUT_MS = Number(Deno.env.get('CADASTRO_EMAIL_TIMEOUT_MS') || '18000');
+const SMTP_STEP_TIMEOUT_MS = Number(Deno.env.get('CADASTRO_SMTP_STEP_TIMEOUT_MS') || '8000');
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -94,7 +96,7 @@ async function sendEmails(
     `Anexos recebidos: ${attachments.length}`
   ].join('\n');
 
-  const internalEmail = await sendEmail({
+  const internalEmail = await sendEmailSafe({
     from,
     to,
     subject,
@@ -103,7 +105,24 @@ async function sendEmails(
   });
   if (!internalEmail.ok) {
     console.error('Falha ao enviar email ao financeiro', internalEmail.error);
-    errors.push('Falha ao enviar email ao financeiro.');
+    errors.push(`Falha ao enviar email ao financeiro: ${internalEmail.error || 'erro desconhecido'}`);
+    if (attachments.length) {
+      const fallbackEmail = await sendEmailSafe({
+        from,
+        to,
+        subject: `[SEM ANEXOS] ${subject}`,
+        text: [
+          text,
+          '',
+          'Atencao: o envio com anexos falhou ou expirou.',
+          'O cadastro foi salvo no CRM e os documentos devem ser consultados na tela Portal Clientes/Cadastros.'
+        ].join('\n')
+      }, Math.max(8000, Math.floor(EMAIL_TIMEOUT_MS / 2)));
+      if (!fallbackEmail.ok) {
+        console.error('Falha ao enviar fallback sem anexos', fallbackEmail.error);
+        errors.push(`Falha ao enviar aviso sem anexos: ${fallbackEmail.error || 'erro desconhecido'}`);
+      }
+    }
   }
 
   const customerRecipients = Array.from(new Set([
@@ -112,12 +131,12 @@ async function sendEmails(
   ].filter(Boolean)));
 
   for (const customerTo of customerRecipients) {
-    const customerEmail = await sendEmail({
+    const customerEmail = await sendEmailSafe({
       from,
       to: customerTo,
       subject: `Recebemos seu cadastro - ${row.protocolo}`,
       text: `Recebemos seu cadastro. Protocolo: ${row.protocolo}. Nossa equipe ira analisar e entrar em contato.`
-    });
+    }, Math.max(8000, Math.floor(EMAIL_TIMEOUT_MS / 2)));
     if (!customerEmail.ok) {
       console.error('Falha ao enviar email ao cliente', customerEmail.error);
       errors.push(`Falha ao enviar confirmacao para ${customerTo}.`);
@@ -177,12 +196,24 @@ async function sendEmail(message: EmailMessage) {
   return sendEmailWithResend(message);
 }
 
+async function sendEmailSafe(message: EmailMessage, timeoutMs = EMAIL_TIMEOUT_MS) {
+  return await withTimeout(
+    sendEmail(message),
+    timeoutMs,
+    `Tempo limite ao enviar email para ${message.to}.`
+  ).catch((error) => ({ ok: false, error: error.message || 'Erro ao enviar email.' }));
+}
+
 async function sendEmailWithGmail(message: EmailMessage) {
   const hostname = Deno.env.get('GMAIL_SMTP_HOST') || 'smtp.gmail.com';
   const port = Number(Deno.env.get('GMAIL_SMTP_PORT') || '465');
   const username = Deno.env.get('GMAIL_SMTP_USER') || '';
   const password = Deno.env.get('GMAIL_SMTP_APP_PASSWORD') || '';
-  const conn = await Deno.connectTls({ hostname, port });
+  const conn = await withTimeout(
+    Deno.connectTls({ hostname, port }),
+    SMTP_STEP_TIMEOUT_MS,
+    'Tempo limite ao conectar no SMTP Gmail.'
+  );
   try {
     await readSmtp(conn);
     await smtp(conn, `EHLO ${hostname}`);
@@ -209,12 +240,15 @@ async function sendEmailWithGmail(message: EmailMessage) {
 async function sendEmailWithResend(message: EmailMessage) {
   const resendKey = Deno.env.get('RESEND_API_KEY');
   if (!resendKey) return { ok: false, error: 'RESEND_API_KEY nao configurado.' };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), EMAIL_TIMEOUT_MS);
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${resendKey}`,
       'Content-Type': 'application/json'
     },
+    signal: controller.signal,
     body: JSON.stringify({
       from: message.from,
       to: message.to,
@@ -226,7 +260,7 @@ async function sendEmailWithResend(message: EmailMessage) {
         content_type: attachment.type || 'application/octet-stream'
       }))
     })
-  });
+  }).finally(() => clearTimeout(timer));
   if (response.ok) return { ok: true };
   return {
     ok: false,
@@ -372,13 +406,27 @@ async function readSmtp(conn: Deno.TlsConn) {
   const buffer = new Uint8Array(4096);
   let text = '';
   while (true) {
-    const count = await conn.read(buffer);
+    const count = await withTimeout(
+      conn.read(buffer),
+      SMTP_STEP_TIMEOUT_MS,
+      'Tempo limite aguardando resposta SMTP.'
+    );
     if (count === null) throw new Error('Conexao SMTP encerrada.');
     text += decoder.decode(buffer.subarray(0, count));
     const lines = text.split(/\r?\n/).filter(Boolean);
     const last = lines[lines.length - 1] || '';
     if (/^\d{3} /.test(last)) return text;
   }
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timer: number | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer);
+  });
 }
 
 function buildMimeMessage(message: EmailMessage) {
