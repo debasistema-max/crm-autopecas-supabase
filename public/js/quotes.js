@@ -1000,6 +1000,12 @@ function renderDocumentEditItems(kind) {
   target.innerHTML = renderDocumentSapItemsTable(kind, items);
   if (totals) totals.innerHTML = renderSapTotals(subtotal, subtotal - total, total);
   target.querySelectorAll('[data-document-edit-qty]').forEach((input) => {
+    input.addEventListener('input', () => {
+      const item = items[Number(input.dataset.documentEditQty)];
+      if (!item) return;
+      item.quantidade = Math.max(1, Number(input.value || 1));
+      window[`${kind}EditDirty`] = true;
+    });
     input.addEventListener('change', () => {
       items[Number(input.dataset.documentEditQty)].quantidade = Math.max(1, Number(input.value || 1));
       window[`${kind}EditDirty`] = true;
@@ -1007,6 +1013,12 @@ function renderDocumentEditItems(kind) {
     });
   });
   target.querySelectorAll('[data-document-edit-discount]').forEach((input) => {
+    input.addEventListener('input', () => {
+      const item = items[Number(input.dataset.documentEditDiscount)];
+      if (!item) return;
+      item.desconto_percentual = Math.max(0, Number(input.value || 0));
+      window[`${kind}EditDirty`] = true;
+    });
     input.addEventListener('change', () => {
       items[Number(input.dataset.documentEditDiscount)].desconto_percentual = Math.max(0, Number(input.value || 0));
       window[`${kind}EditDirty`] = true;
@@ -1106,6 +1118,7 @@ async function saveDocumentEdit(kind) {
   button.disabled = true;
   button.textContent = 'Salvando...';
   try {
+    syncDocumentEditInputs(kind);
     const payload = {
       id: document.getElementById(`${kind}EditId`).value,
       items: window[`${kind}EditingItems`] || []
@@ -1126,6 +1139,18 @@ async function saveDocumentEdit(kind) {
     button.disabled = false;
     button.textContent = 'Salvar itens';
   }
+}
+
+function syncDocumentEditInputs(kind) {
+  const items = window[`${kind}EditingItems`] || [];
+  document.querySelectorAll(`#${kind}EditItems [data-document-edit-qty]`).forEach((input) => {
+    const item = items[Number(input.dataset.documentEditQty)];
+    if (item) item.quantidade = Math.max(1, Number(input.value || 1));
+  });
+  document.querySelectorAll(`#${kind}EditItems [data-document-edit-discount]`).forEach((input) => {
+    const item = items[Number(input.dataset.documentEditDiscount)];
+    if (item) item.desconto_percentual = Math.max(0, Number(input.value || 0));
+  });
 }
 
 async function updateDocumentStatus(kind, id, status) {
