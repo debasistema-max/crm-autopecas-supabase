@@ -670,23 +670,27 @@ async function supabaseImportProducts(payload) {
       });
     }
 
-    const chunks = chunkArray(mapped, 300);
-    for (let index = 0; index < chunks.length; index += 1) {
-      const { error } = await supabaseClient
-        .from('products')
-        .upsert(chunks[index], { onConflict: 'codigo', defaultToNull: false });
-      if (error) throw error;
-      if (typeof payload.onProgress === 'function') {
-        payload.onProgress({
-          done: Math.min((index + 1) * 300, mapped.length),
-          total: mapped.length,
-          batch: index + 1,
-          batches: chunks.length
-        });
-      }
+    if (typeof payload.onProgress === 'function') {
+      payload.onProgress({
+        done: 0,
+        total: mapped.length,
+        batch: 1,
+        batches: 1
+      });
     }
 
-    batch = {
+    const { data, error } = await supabaseClient.rpc('import_products_transactional', {
+      payload: {
+        tipo: plan.tipo,
+        fileName: payload.fileName || null,
+        total_recebido: plan.totalRows,
+        duplicados: plan.duplicates,
+        erros: plan.invalidRows.length,
+        products: mapped
+      }
+    });
+    if (error) throw error;
+    batch = data || {
       usuario: session.usuario || null,
       tipo: plan.tipo,
       total_recebido: plan.totalRows,
@@ -696,18 +700,14 @@ async function supabaseImportProducts(payload) {
       erros: plan.invalidRows.length,
       status: 'APLICADO'
     };
-    await supabaseClient.from('import_batches').insert(batch);
-    await supabaseLog('IMPORTAR_PRODUTOS', 'products', plan.tipo, {
-      data_hora: new Date().toISOString(),
-      usuario: session.usuario || null,
-      nome_arquivo: payload.fileName || null,
-      linhas_validas: plan.validRows,
-      produtos_unicos: plan.uniqueRows,
-      codigos_duplicados: plan.duplicateCodes,
-      campos_atualizados: plan.fieldsUpdated,
-      status: 'sucesso',
-      resumo: batch
-    });
+    if (typeof payload.onProgress === 'function') {
+      payload.onProgress({
+        done: mapped.length,
+        total: mapped.length,
+        batch: 1,
+        batches: 1
+      });
+    }
     return { summary: batch, preview: plan.preview };
   } catch (error) {
     await supabaseLog('ERRO_IMPORTAR_PRODUTOS', 'products', plan.tipo, {
