@@ -670,19 +670,11 @@ async function supabaseImportProducts(payload) {
   try {
     let novos = 0;
     let atualizados = 0;
-    const codes = mapped.map((product) => product.codigo);
-    for (const chunk of chunkArray(codes, PRODUCT_IMPORT_LOOKUP_CHUNK_SIZE)) {
-      const { data, error } = await supabaseClient
-        .from('products')
-        .select('codigo')
-        .in('codigo', chunk);
-      if (error) throw formatProductImportLookupError(error);
-      const existing = new Set((data || []).map((item) => item.codigo));
-      chunk.forEach((code) => {
-        if (existing.has(code)) atualizados += 1;
-        else novos += 1;
-      });
-    }
+    const existing = await supabaseCheckExistingProductCodes(mapped.map((product) => product.codigo));
+    mapped.forEach((product) => {
+      if (existing.has(product.codigo)) atualizados += 1;
+      else novos += 1;
+    });
 
     if (typeof payload.onProgress === 'function') {
       payload.onProgress({
@@ -755,6 +747,10 @@ async function supabasePreviewImportProducts(payload) {
       invalidRows.push({ linha: index + 2, motivo: 'Codigo ausente' });
       return;
     }
+    if (String(product.codigo).length > 80) {
+      invalidRows.push({ linha: index + 2, motivo: 'Codigo com mais de 80 caracteres' });
+      return;
+    }
     if (tipo === 'PRECO_SP' && product.preco_sp == null) {
       invalidRows.push({ linha: index + 2, motivo: 'Preco SP ausente ou invalido' });
       return;
@@ -770,16 +766,8 @@ async function supabasePreviewImportProducts(payload) {
 
   const consolidated = consolidateImportProducts(products);
   const productsUnique = consolidated.productsUnique;
-  const codes = productsUnique.map((product) => product.codigo);
-  let existingCount = 0;
-  for (const chunk of chunkArray(codes, PRODUCT_IMPORT_LOOKUP_CHUNK_SIZE)) {
-    const { data, error } = await supabaseClient
-      .from('products')
-      .select('codigo')
-      .in('codigo', chunk);
-    if (error) throw formatProductImportLookupError(error);
-    existingCount += (data || []).length;
-  }
+  const existingCodes = await supabaseCheckExistingProductCodes(productsUnique.map((product) => product.codigo));
+  const existingCount = existingCodes.size;
 
   return {
     tipo,
@@ -1089,8 +1077,28 @@ function importNumber(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+async function supabaseCheckExistingProductCodes(codes) {
+  const cleanCodes = Array.from(new Set((codes || []).map(normalizeImportCode).filter(Boolean)));
+  const existing = new Set();
+  for (const chunk of chunkArray(cleanCodes, PRODUCT_IMPORT_LOOKUP_CHUNK_SIZE)) {
+    const { data, error } = await supabaseClient.rpc('check_existing_product_codes', { codes: chunk });
+    if (error) throw formatProductImportLookupError(error, chunk);
+    (data || []).forEach((item) => {
+      const code = normalizeImportCode(item && item.codigo);
+      if (code) existing.add(code);
+    });
+  }
+  return existing;
+}
+
+function normalizeImportCode(value) {
+  return String(value || '')
+    .replace(/[\r\n\t]+/g, ' ')
+    .trim();
+}
+
 function normalizeProductCode(value) {
-  let text = String(value || '').trim();
+  let text = normalizeImportCode(value);
   if (!text) return '';
   text = text.replace(/\s+/g, '');
   if (/^\d+\.0+$/.test(text)) return text.replace(/\.0+$/, '');
@@ -1161,10 +1169,30 @@ function chunkArray(items, size) {
   return out;
 }
 
-function formatProductImportLookupError(error) {
+function formatProductImportLookupError(error, chunk = []) {
   const message = String(error?.message || '');
-  if (message.toLowerCase() === 'bad request' || error?.code === '400') {
-    return new Error('Nao foi possivel comparar os codigos com o Supabase. Tente novamente; se persistir, reduza o arquivo ou confira codigos com caracteres especiais.');
+  console.error('Erro ao consultar codigos existentes:', {
+    message: error?.message,
+    code: error?.code,
+    details: error?.details,
+    hint: error?.hint,
+    chunkSize: chunk.length,
+    sampleCodes: chunk.slice(0, 10)
+  });
+
+  if (
+    error?.code === 'PGRST202'
+    || message.includes('check_existing_product_codes')
+    || message.toLowerCase().includes('could not find the function')
+  ) {
+    return new Error('RPC check_existing_product_codes nao encontrada. Rode a migration 017 no Supabase.');
   }
-  return error;
+
+  return new Error([
+    'Nao foi possivel comparar os codigos com o Supabase.',
+    error?.message ? `Mensagem: ${error.message}` : '',
+    error?.code ? `Codigo: ${error.code}` : '',
+    error?.details ? `Detalhes: ${error.details}` : '',
+    error?.hint ? `Dica: ${error.hint}` : ''
+  ].filter(Boolean).join(' '));
 }
