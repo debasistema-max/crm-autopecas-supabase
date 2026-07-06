@@ -1,3 +1,5 @@
+const PRODUCT_IMPORT_LOOKUP_CHUNK_SIZE = 100;
+
 async function supabaseLogin(usuario, senha) {
   if (!isSupabaseReady()) throw new Error('Supabase nao configurado.');
   const login = String(usuario || '').trim();
@@ -669,12 +671,12 @@ async function supabaseImportProducts(payload) {
     let novos = 0;
     let atualizados = 0;
     const codes = mapped.map((product) => product.codigo);
-    for (const chunk of chunkArray(codes, 500)) {
+    for (const chunk of chunkArray(codes, PRODUCT_IMPORT_LOOKUP_CHUNK_SIZE)) {
       const { data, error } = await supabaseClient
         .from('products')
         .select('codigo')
         .in('codigo', chunk);
-      if (error) throw error;
+      if (error) throw formatProductImportLookupError(error);
       const existing = new Set((data || []).map((item) => item.codigo));
       chunk.forEach((code) => {
         if (existing.has(code)) atualizados += 1;
@@ -770,12 +772,12 @@ async function supabasePreviewImportProducts(payload) {
   const productsUnique = consolidated.productsUnique;
   const codes = productsUnique.map((product) => product.codigo);
   let existingCount = 0;
-  for (const chunk of chunkArray(codes, 500)) {
+  for (const chunk of chunkArray(codes, PRODUCT_IMPORT_LOOKUP_CHUNK_SIZE)) {
     const { data, error } = await supabaseClient
       .from('products')
       .select('codigo')
       .in('codigo', chunk);
-    if (error) throw error;
+    if (error) throw formatProductImportLookupError(error);
     existingCount += (data || []).length;
   }
 
@@ -1157,4 +1159,12 @@ function chunkArray(items, size) {
   const out = [];
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
   return out;
+}
+
+function formatProductImportLookupError(error) {
+  const message = String(error?.message || '');
+  if (message.toLowerCase() === 'bad request' || error?.code === '400') {
+    return new Error('Nao foi possivel comparar os codigos com o Supabase. Tente novamente; se persistir, reduza o arquivo ou confira codigos com caracteres especiais.');
+  }
+  return error;
 }
