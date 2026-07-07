@@ -661,75 +661,17 @@ async function supabaseSaveUser(payload) {
 }
 
 async function supabaseImportProducts(payload) {
-  const plan = await supabasePreviewImportProducts(payload);
-  const mapped = plan.productsUnique.map(filterProductFields);
-  if (!mapped.length) throw new Error('Nenhum produto valido encontrado para importar.');
-
-  const session = getStoredSession() || {};
-  let batch = null;
-  try {
-    let novos = 0;
-    let atualizados = 0;
-    const existing = await supabaseCheckExistingProductCodes(mapped.map((product) => product.codigo));
-    mapped.forEach((product) => {
-      if (existing.has(product.codigo)) atualizados += 1;
-      else novos += 1;
-    });
-
-    if (typeof payload.onProgress === 'function') {
-      payload.onProgress({
-        done: 0,
-        total: mapped.length,
-        batch: 1,
-        batches: 1
-      });
-    }
-
-    const { data, error } = await supabaseClient.rpc('import_products_transactional', {
-      payload: {
-        tipo: plan.tipo,
-        fileName: payload.fileName || null,
-        total_recebido: plan.totalRows,
-        duplicados: plan.duplicates,
-        erros: plan.invalidRows.length,
-        products: mapped
-      }
-    });
-    if (error) throw error;
-    batch = data || {
-      usuario: session.usuario || null,
-      tipo: plan.tipo,
-      total_recebido: plan.totalRows,
-      novos,
-      atualizados,
-      sem_alteracao: plan.duplicates,
-      erros: plan.invalidRows.length,
-      status: 'APLICADO'
-    };
-    if (typeof payload.onProgress === 'function') {
-      payload.onProgress({
-        done: mapped.length,
-        total: mapped.length,
-        batch: 1,
-        batches: 1
-      });
-    }
-    return { summary: batch, preview: plan.preview };
-  } catch (error) {
-    await supabaseLog('ERRO_IMPORTAR_PRODUTOS', 'products', plan.tipo, {
-      data_hora: new Date().toISOString(),
-      usuario: session.usuario || null,
-      nome_arquivo: payload.fileName || null,
-      total_linhas: plan.totalRows,
-      linhas_validas: plan.validRows,
-      produtos_unicos: plan.uniqueRows,
-      duplicados: plan.duplicates,
-      invalidos: plan.invalidRows.length,
-      status: 'erro',
-      mensagem_erro: error.message
-    });
-    throw error;
+  const batchId = payload.batchId || payload.batch_id;
+  if (!batchId) throw new Error('Gere a previa antes de importar.');
+  if (typeof payload.onProgress === 'function') {
+    payload.onProgress({ done: 0, total: 1, batch: 1, batches: 1 });
   }
+  const { data, error } = await supabaseClient.rpc('commit_products_import_batch', { batch_id: batchId });
+  if (error) throw formatImportRpcError(error);
+  if (typeof payload.onProgress === 'function') {
+    payload.onProgress({ done: 1, total: 1, batch: 1, batches: 1 });
+  }
+  return normalizeStagedImportPreview(data);
 }
 
 async function supabasePreviewImportProducts(payload) {
@@ -742,7 +684,7 @@ async function supabasePreviewImportProducts(payload) {
   const products = [];
 
   rows.forEach((row, index) => {
-    const product = filterProductFields(mapImportProduct(row, tipo));
+    const product = Object.assign({ row_number: index + 2 }, filterProductFields(mapImportProduct(row, tipo)));
     if (!product.codigo) {
       invalidRows.push({ linha: index + 2, motivo: 'Codigo ausente' });
       return;
@@ -764,26 +706,150 @@ async function supabasePreviewImportProducts(payload) {
 
   if (!products.length) throw new Error('Nenhum produto valido encontrado na importacao.');
 
-  const consolidated = consolidateImportProducts(products);
-  const productsUnique = consolidated.productsUnique;
-  const existingCodes = await supabaseCheckExistingProductCodes(productsUnique.map((product) => product.codigo));
-  const existingCount = existingCodes.size;
+  const fileHash = await hashImportText([tipo, payload.fileName || '', payload.texto || ''].join('\n'));
+  const { data, error } = await supabaseClient.rpc('create_products_import_batch', {
+    payload: {
+      import_type: tipo,
+      source_name: payload.fileName || null,
+      file_hash: fileHash,
+      products
+    }
+  });
+  if (error) throw formatImportRpcError(error);
+  const plan = normalizeStagedImportPreview(data);
+  plan.invalidRows = (plan.invalidRows || []).concat(invalidRows);
+  plan.validRows = Math.max(0, Number(plan.totalRows || 0) - plan.invalidRows.length);
+  plan.portalWarnings = payload.portalTexto ? buildPortalImportWarnings(payload.portalTexto, products, tipo) : [];
+  return plan;
+}
 
+function normalizeStagedImportPreview(data = {}) {
+  const summary = data.summary || {};
+  const errors = Array.isArray(data.errors) ? data.errors : [];
+  const warnings = Array.isArray(data.warnings) ? data.warnings : [];
+  const preview = Array.isArray(data.preview) ? data.preview : [];
+  const differences = Array.isArray(data.differences) ? data.differences : [];
+  const duplicateCodes = errors
+    .filter((row) => JSON.stringify(row.errors || []).includes('duplicado'))
+    .map((row) => row.codigo)
+    .filter(Boolean);
   return {
-    tipo,
-    fieldsUpdated: getImportUpdatedFields(tipo),
-    totalRows: rows.length,
-    validRows: products.length,
-    uniqueRows: productsUnique.length,
-    invalidRows,
-    duplicateCodes: consolidated.duplicateCodes,
-    duplicates: consolidated.duplicateCodes.length,
-    existingCount,
-    newCount: Math.max(productsUnique.length - existingCount, 0),
-    preview: productsUnique.slice(0, 8),
-    products,
-    productsUnique
+    batchId: data.batch_id || summary.batchId,
+    status: data.status || summary.status || 'draft',
+    tipo: summary.importType,
+    fieldsUpdated: getImportUpdatedFields(summary.importType),
+    totalRows: Number(summary.totalRows || 0),
+    validRows: Number(summary.validRows || 0),
+    uniqueRows: Number(summary.validRows || 0),
+    invalidRows: errors.map((row) => ({
+      linha: row.row_number,
+      motivo: jsonArrayToText(row.errors)
+    })),
+    warningRows: warnings.map((row) => ({
+      linha: row.row_number,
+      codigo: row.codigo,
+      motivo: jsonArrayToText(row.warnings)
+    })),
+    differences,
+    duplicateCodes,
+    duplicates: duplicateCodes.length,
+    existingCount: Number(summary.updatedCount || 0),
+    newCount: Number(summary.newCount || 0),
+    warningCount: Number(summary.warningCount || 0),
+    errorCount: Number(summary.errorCount || 0),
+    priceChanged: Number(summary.priceChanged || 0),
+    stockChanged: Number(summary.stockChanged || 0),
+    descriptionChanged: Number(summary.descriptionChanged || 0),
+    preview,
+    summary
   };
+}
+
+async function hashImportText(value) {
+  const text = String(value || '');
+  if (!window.crypto || !window.crypto.subtle) return String(text.length) + ':' + text.slice(0, 64);
+  const bytes = new TextEncoder().encode(text);
+  const digest = await window.crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function formatImportRpcError(error) {
+  const message = String(error?.message || '');
+  console.error('Erro na RPC de importacao:', {
+    message: error?.message,
+    code: error?.code,
+    details: error?.details,
+    hint: error?.hint
+  });
+  if (message.includes('ARQUIVO_JA_IMPORTADO')) return new Error('Arquivo ja importado anteriormente.');
+  if (message.includes('IMPORTACAO_BLOQUEADA_COM_ERROS')) return new Error('Importacao bloqueada: existem erros que precisam ser corrigidos.');
+  if (message.includes('SEM_PERMISSAO')) return new Error('Usuario sem permissao para importar produtos.');
+  if (message.includes('IMPORTACAO_SEM_PRODUTOS')) return new Error('Nenhum produto valido encontrado na importacao.');
+  if (message.toLowerCase().includes('could not find the function')) {
+    return new Error('RPC de importacao nao encontrada. Rode a migration 018 no Supabase.');
+  }
+  return new Error([
+    'Erro na importacao SAP.',
+    error?.message ? `Mensagem: ${error.message}` : '',
+    error?.code ? `Codigo: ${error.code}` : '',
+    error?.details ? `Detalhes: ${error.details}` : '',
+    error?.hint ? `Dica: ${error.hint}` : ''
+  ].filter(Boolean).join(' '));
+}
+
+function jsonArrayToText(value) {
+  if (Array.isArray(value)) return value.join(', ');
+  if (value == null) return '';
+  return String(value);
+}
+
+function buildPortalImportWarnings(portalText, sapProducts, tipo) {
+  try {
+    const portalPlan = getImportAutoAnalysis(portalText, tipo);
+    const portalRows = applyImportMapping(parseDelimitedTable(portalText).rows, portalPlan.mapping)
+      .map((row) => filterProductFields(mapImportProduct(row, tipo)))
+      .filter((product) => product.codigo);
+    const sapByCode = new Map((sapProducts || []).map((product) => [product.codigo, product]));
+    const portalByCode = new Map(portalRows.map((product) => [product.codigo, product]));
+    const warnings = [];
+
+    sapByCode.forEach((sapProduct, code) => {
+      const portalProduct = portalByCode.get(code);
+      if (!portalProduct) {
+        warnings.push(`Codigo ${code} esta no SAP e ausente no Portal`);
+        return;
+      }
+      const sapPrice = Number(sapProduct.preco_sp ?? sapProduct.preco_pr ?? 0);
+      const portalPrice = Number(portalProduct.preco_sp ?? portalProduct.preco_pr ?? 0);
+      if (sapPrice > 0 && portalPrice > 0 && Math.abs(sapPrice - portalPrice) / sapPrice > 0.02) {
+        warnings.push(`Codigo ${code}: preco SAP x Portal diferente acima de 2%`);
+      }
+      const sapStock = Number(sapProduct.estoque_quantidade ?? 0);
+      const portalStock = Number(portalProduct.estoque_quantidade ?? 0);
+      if (Number.isFinite(sapStock) && Number.isFinite(portalStock) && sapStock !== portalStock) {
+        warnings.push(`Codigo ${code}: estoque SAP x Portal diferente`);
+      }
+      if (textDistanceRatio(sapProduct.descricao, portalProduct.descricao) > 0.45) {
+        warnings.push(`Codigo ${code}: descricao SAP x Portal muito diferente`);
+      }
+    });
+
+    portalByCode.forEach((_portalProduct, code) => {
+      if (!sapByCode.has(code)) warnings.push(`Codigo ${code} esta no Portal e ausente no SAP`);
+    });
+
+    return warnings;
+  } catch (error) {
+    return ['Nao foi possivel comparar o texto do Portal: ' + (error.message || 'formato invalido')];
+  }
+}
+
+function textDistanceRatio(a, b) {
+  const left = String(a || '').toLowerCase().trim();
+  const right = String(b || '').toLowerCase().trim();
+  if (!left || !right) return 0;
+  const common = left.split(/\s+/).filter((word) => right.includes(word)).join(' ').length;
+  return 1 - common / Math.max(left.length, right.length, 1);
 }
 
 function getImportColumnPlan(text, tipo) {

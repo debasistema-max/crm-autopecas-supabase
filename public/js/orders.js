@@ -829,6 +829,9 @@ async function renderSapImport(container) {
         <label class="span-12">Tabela colada
           <textarea id="importText" placeholder="CODIGO IPS;DESCRICAO;MARCA;APLICACAO;ANO;IPI;PRECO S/IMP;PRECO C/IMP;ESTOQUE"></textarea>
         </label>
+        <label class="span-12">Arquivo/Texto do Portal para conferencia
+          <textarea id="importPortalText" placeholder="Opcional: cole a lista do Portal para comparar codigos, precos, estoque e descricao"></textarea>
+        </label>
       </div>
       <div class="actions-row">
         <button class="btn btn-primary" id="previewImportButton" type="button">Verificar dados</button>
@@ -916,14 +919,16 @@ async function renderSapImport(container) {
       currentImportPlan = await supabasePreviewImportProducts({
         tipo: document.getElementById('importType').value,
         texto: text,
+        portalTexto: document.getElementById('importPortalText').value,
         mapping: getCurrentImportMapping()
       });
       preview.innerHTML = renderImportPreview(currentImportPlan, { automatic: true, templateMatch });
-      message.style.color = 'var(--success)';
-      message.textContent = templateMatch.useTemplate
-        ? 'Modelo aprendido aplicado. Confira a previa e clique em Importar.'
-        : 'Analise pronta. Confira a previa reorganizada e clique em Importar.';
-      applyButton.disabled = false;
+      const ready = !Number(currentImportPlan.errorCount || 0);
+      message.style.color = ready ? 'var(--success)' : 'var(--accent)';
+      message.textContent = ready
+        ? (Number(currentImportPlan.warningCount || 0) ? 'Existem alertas para conferencia, mas a importacao pode continuar.' : 'Nenhum erro encontrado. Importacao pronta para aprovacao.')
+        : 'Importacao bloqueada: existem erros que precisam ser corrigidos.';
+      applyButton.disabled = !ready;
     } catch (error) {
       currentImportPlan = null;
       preview.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
@@ -945,12 +950,16 @@ async function renderSapImport(container) {
     currentImportPlan = await supabasePreviewImportProducts({
       tipo: document.getElementById('importType').value,
       texto: text,
+      portalTexto: document.getElementById('importPortalText').value,
       mapping: getCurrentImportMapping()
     });
     preview.innerHTML = renderImportPreview(currentImportPlan, { automatic });
-    message.style.color = 'var(--success)';
-    message.textContent = messageText;
-    applyButton.disabled = false;
+    const ready = !Number(currentImportPlan.errorCount || 0);
+    message.style.color = ready ? 'var(--success)' : 'var(--accent)';
+    message.textContent = ready
+      ? (Number(currentImportPlan.warningCount || 0) ? 'Existem alertas para conferencia, mas a importacao pode continuar.' : messageText)
+      : 'Importacao bloqueada: existem erros que precisam ser corrigidos.';
+    applyButton.disabled = !ready;
   };
 
   document.getElementById('importFile').addEventListener('change', async (event) => {
@@ -966,6 +975,13 @@ async function renderSapImport(container) {
     currentImportPlan = null;
     document.getElementById('applyImportButton').disabled = true;
     document.getElementById('importPreview').innerHTML = '<div class="empty-state">Aguardando a analise automatica...</div>';
+    scheduleImportAnalysis();
+  });
+
+  document.getElementById('importPortalText').addEventListener('input', () => {
+    currentImportPlan = null;
+    document.getElementById('applyImportButton').disabled = true;
+    document.getElementById('importPreview').innerHTML = '<div class="empty-state">Aguardando comparacao com Portal...</div>';
     scheduleImportAnalysis();
   });
 
@@ -1040,6 +1056,7 @@ async function renderSapImport(container) {
   document.getElementById('clearImportButton').addEventListener('click', () => {
     currentImportPlan = null;
     document.getElementById('importText').value = '';
+    document.getElementById('importPortalText').value = '';
     document.getElementById('importFile').value = '';
     document.getElementById('applyImportButton').disabled = true;
     document.getElementById('importMessage').textContent = '';
@@ -1080,22 +1097,23 @@ async function renderSapImport(container) {
     }
     button.disabled = true;
     message.style.color = 'var(--muted)';
-    message.textContent = 'Importando 0 de ' + currentImportPlan.validRows + ' produtos...';
+    if (Number(currentImportPlan.errorCount || 0)) {
+      message.style.color = 'var(--accent)';
+      message.textContent = 'Importacao bloqueada: existem erros que precisam ser corrigidos.';
+      return;
+    }
+    message.textContent = 'Importando lote aprovado...';
     try {
-      const file = document.getElementById('importFile').files && document.getElementById('importFile').files[0];
       saveCurrentImportMappingTemplate();
       const data = await supabaseImportProducts({
-        tipo: document.getElementById('importType').value,
-        texto: document.getElementById('importText').value,
-        fileName: file ? file.name : null,
-        mapping: getCurrentImportMapping(),
+        batchId: currentImportPlan.batchId,
         onProgress: (progress) => {
-          message.textContent = 'Importando lote ' + progress.batch + ' de ' + progress.batches + ' - ' + progress.done + ' de ' + progress.total + ' produtos...';
+          message.textContent = 'Importando lote aprovado...';
         }
       });
       message.style.color = 'var(--success)';
       message.textContent = 'Importacao aplicada com sucesso.';
-      preview.innerHTML = renderImportResult(data.summary);
+      preview.innerHTML = renderImportResult(data.summary || data);
       currentImportPlan = null;
     } catch (error) {
       message.style.color = 'var(--accent)';
@@ -1359,7 +1377,16 @@ function renderImportTemplate(type) {
 
 function renderImportPreview(plan, options = {}) {
   const invalid = plan.invalidRows.length
-    ? `<div class="import-warnings"><strong>${plan.invalidRows.length} linhas ignoradas</strong><span>${plan.invalidRows.slice(0, 5).map((row) => `Linha ${row.linha}: ${escapeHtml(row.motivo)}`).join(' | ')}</span></div>`
+    ? `<div class="import-warnings"><strong>${plan.invalidRows.length} erros bloqueantes</strong><span>${plan.invalidRows.slice(0, 8).map((row) => `Linha ${row.linha}: ${escapeHtml(row.motivo)}`).join(' | ')}</span></div>`
+    : '';
+  const warnings = plan.warningRows && plan.warningRows.length
+    ? `<div class="import-warnings"><strong>${plan.warningRows.length} linhas com alertas</strong><span>${plan.warningRows.slice(0, 8).map((row) => `Linha ${row.linha}: ${escapeHtml(row.motivo)}`).join(' | ')}</span></div>`
+    : '';
+  const portalWarnings = plan.portalWarnings && plan.portalWarnings.length
+    ? `<div class="import-warnings"><strong>${plan.portalWarnings.length} alertas do Portal</strong><span>${plan.portalWarnings.slice(0, 8).map(escapeHtml).join(' | ')}</span></div>`
+    : '';
+  const differences = plan.differences && plan.differences.length
+    ? `<div class="import-warnings"><strong>${plan.differences.length} diferencas para conferir</strong><span>${plan.differences.slice(0, 8).map((row) => `${escapeHtml(row.codigo || '')}: ${escapeHtml((row.warnings || []).join(', '))}`).join(' | ')}</span></div>`
     : '';
   const duplicates = plan.duplicates
     ? `<div class="import-warnings"><strong>${plan.duplicates} codigos repetidos</strong><span>O sistema junta as linhas do mesmo codigo: o ultimo valor preenchido vence e campos vazios nao apagam dados anteriores. ${escapeHtml((plan.duplicateCodes || []).slice(0, 8).join(', '))}</span></div>`
@@ -1390,13 +1417,20 @@ function renderImportPreview(plan, options = {}) {
       <article><span>Unicos</span><strong>${plan.uniqueRows}</strong></article>
       <article><span>Novos</span><strong>${plan.newCount}</strong></article>
       <article><span>Atualizacoes</span><strong>${plan.existingCount}</strong></article>
-      <article><span>Duplicados</span><strong>${plan.duplicates}</strong></article>
+      <article><span>Erros</span><strong>${plan.errorCount || plan.invalidRows.length || 0}</strong></article>
+      <article><span>Alertas</span><strong>${plan.warningCount || 0}</strong></article>
+      <article><span>Preco alterado</span><strong>${plan.priceChanged || 0}</strong></article>
+      <article><span>Estoque alterado</span><strong>${plan.stockChanged || 0}</strong></article>
+      <article><span>Descricao alterada</span><strong>${plan.descriptionChanged || 0}</strong></article>
     </div>
     ${templateAlert}
     ${auto}
     ${fields}
     ${duplicates}
     ${invalid}
+    ${warnings}
+    ${portalWarnings}
+    ${differences}
     ${renderImportTable(plan.preview)}
   `;
 }
@@ -1404,10 +1438,11 @@ function renderImportPreview(plan, options = {}) {
 function renderImportResult(summary) {
   return `
     <div class="import-summary">
-      <article><span>Recebidos</span><strong>${summary.total_recebido}</strong></article>
-      <article><span>Novos</span><strong>${summary.novos}</strong></article>
-      <article><span>Atualizados</span><strong>${summary.atualizados}</strong></article>
-      <article><span>Ignorados</span><strong>${summary.erros}</strong></article>
+      <article><span>Recebidos</span><strong>${summary.totalRows || summary.total_recebido || 0}</strong></article>
+      <article><span>Validos</span><strong>${summary.validRows || 0}</strong></article>
+      <article><span>Novos</span><strong>${summary.newCount || summary.novos || 0}</strong></article>
+      <article><span>Atualizados</span><strong>${summary.updatedCount || summary.atualizados || 0}</strong></article>
+      <article><span>Status</span><strong>${escapeHtml(summary.status || 'committed')}</strong></article>
     </div>
   `;
 }
