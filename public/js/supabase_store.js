@@ -674,35 +674,24 @@ async function supabaseImportProducts(payload) {
   return normalizeStagedImportPreview(data);
 }
 
+async function supabaseApproveProductsImport(payload) {
+  const batchId = payload.batchId || payload.batch_id;
+  if (!batchId) throw new Error('Gere a previa antes de aprovar.');
+  const { data, error } = await supabaseClient.rpc('approve_products_import_batch', { batch_id: batchId });
+  if (error) throw formatImportRpcError(error);
+  return normalizeStagedImportPreview(data);
+}
+
 async function supabasePreviewImportProducts(payload) {
   const tipo = normalizeImportType(payload.tipo);
   const table = parseDelimitedTable(payload.texto || '');
+  validateImportRequiredColumns(table.headers, payload.mapping, tipo);
   const rows = applyImportMapping(table.rows, payload.mapping);
   if (!rows.length) throw new Error('Cole ou selecione um CSV/TSV com cabecalho.');
 
-  const invalidRows = [];
-  const products = [];
-
-  rows.forEach((row, index) => {
-    const product = Object.assign({ row_number: index + 2 }, filterProductFields(mapImportProduct(row, tipo)));
-    if (!product.codigo) {
-      invalidRows.push({ linha: index + 2, motivo: 'Codigo ausente' });
-      return;
-    }
-    if (String(product.codigo).length > 80) {
-      invalidRows.push({ linha: index + 2, motivo: 'Codigo com mais de 80 caracteres' });
-      return;
-    }
-    if (tipo === 'PRECO_SP' && product.preco_sp == null) {
-      invalidRows.push({ linha: index + 2, motivo: 'Preco SP ausente ou invalido' });
-      return;
-    }
-    if (tipo === 'PRECO_PR' && product.preco_pr == null) {
-      invalidRows.push({ linha: index + 2, motivo: 'Preco PR ausente ou invalido' });
-      return;
-    }
-    products.push(product);
-  });
+  const products = rows.map((row, index) => (
+    Object.assign({ row_number: index + 2 }, filterProductFields(mapImportProduct(row, tipo)))
+  ));
 
   if (!products.length) throw new Error('Nenhum produto valido encontrado na importacao.');
 
@@ -710,6 +699,7 @@ async function supabasePreviewImportProducts(payload) {
   const { data, error } = await supabaseClient.rpc('create_products_import_batch', {
     payload: {
       import_type: tipo,
+      region: payload.region || payload.filial || null,
       source_name: payload.fileName || null,
       file_hash: fileHash,
       products
@@ -717,8 +707,8 @@ async function supabasePreviewImportProducts(payload) {
   });
   if (error) throw formatImportRpcError(error);
   const plan = normalizeStagedImportPreview(data);
-  plan.invalidRows = (plan.invalidRows || []).concat(invalidRows);
-  plan.validRows = Math.max(0, Number(plan.totalRows || 0) - plan.invalidRows.length);
+  plan.totalRows = rows.length;
+  plan.validRows = Math.max(0, rows.length - Number(plan.errorCount || 0));
   plan.portalWarnings = payload.portalTexto ? buildPortalImportWarnings(payload.portalTexto, products, tipo) : [];
   return plan;
 }
@@ -741,6 +731,7 @@ function normalizeStagedImportPreview(data = {}) {
     totalRows: Number(summary.totalRows || 0),
     validRows: Number(summary.validRows || 0),
     uniqueRows: Number(summary.validRows || 0),
+    ignoredCount: Number(summary.ignoredCount || summary.invalidRows || 0),
     invalidRows: errors.map((row) => ({
       linha: row.row_number,
       motivo: jsonArrayToText(row.errors)
@@ -783,10 +774,12 @@ function formatImportRpcError(error) {
   });
   if (message.includes('ARQUIVO_JA_IMPORTADO')) return new Error('Arquivo ja importado anteriormente.');
   if (message.includes('IMPORTACAO_BLOQUEADA_COM_ERROS')) return new Error('Importacao bloqueada: existem erros que precisam ser corrigidos.');
+  if (message.includes('SEM_PERMISSAO_APROVAR_IMPORTACAO')) return new Error('Usuario sem permissao para aprovar/importar produtos.');
+  if (message.includes('IMPORTACAO_NAO_APROVADA')) return new Error('Importacao precisa estar validada/aprovada antes de gravar.');
   if (message.includes('SEM_PERMISSAO')) return new Error('Usuario sem permissao para importar produtos.');
   if (message.includes('IMPORTACAO_SEM_PRODUTOS')) return new Error('Nenhum produto valido encontrado na importacao.');
   if (message.toLowerCase().includes('could not find the function')) {
-    return new Error('RPC de importacao nao encontrada. Rode a migration 018 no Supabase.');
+    return new Error('RPC de importacao nao encontrada. Rode as migrations 018, 019 e 020 no Supabase.');
   }
   return new Error([
     'Erro na importacao SAP.',
@@ -991,6 +984,37 @@ function getImportUpdatedFields(tipo) {
     'oem',
     'similar'
   ];
+}
+
+function getImportRequiredFields(tipo) {
+  if (tipo === 'PORTAL_ESTOQUE') return ['codigo', 'estoque'];
+  if (tipo === 'PRECO_SP') return ['codigo', 'preco_sp'];
+  if (tipo === 'PRECO_PR') return ['codigo', 'preco_pr'];
+  if (tipo === 'CATALOGO_PESQUISA') return ['codigo'];
+  return ['codigo', 'descricao'];
+}
+
+function validateImportRequiredColumns(headers, mapping, tipo) {
+  if (!headers.length) throw new Error('Cole ou selecione um CSV/TSV com cabecalho.');
+  const mappedFields = new Set(Object.values(mapping || {}).filter(Boolean));
+  const missing = getImportRequiredFields(tipo).filter((field) => !mappedFields.has(field));
+  if (!missing.length) return;
+  throw new Error(
+    'Colunas obrigatorias nao encontradas no mapeamento: '
+    + missing.map(getImportFieldLabel).join(', ')
+    + '. Ajuste as colunas detectadas antes de verificar.'
+  );
+}
+
+function getImportFieldLabel(field) {
+  const labels = {
+    codigo: 'codigo',
+    descricao: 'descricao',
+    estoque: 'estoque',
+    preco_sp: 'preco SP',
+    preco_pr: 'preco PR'
+  };
+  return labels[field] || field;
 }
 
 function parseDelimitedTable(text) {

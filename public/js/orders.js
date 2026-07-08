@@ -823,7 +823,13 @@ async function renderSapImport(container) {
             <option value="CATALOGO_PESQUISA">Catalogo pesquisa</option>
           </select>
         </label>
-        <label class="span-8">Arquivo
+        <label class="span-4">Filial/Estado
+          <select id="importRegion">
+            <option value="SP" selected>SP - Filial</option>
+            <option value="PR">PR - Matriz</option>
+          </select>
+        </label>
+        <label class="span-4">Arquivo
           <input id="importFile" type="file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values">
         </label>
         <label class="span-12">Tabela colada
@@ -835,7 +841,7 @@ async function renderSapImport(container) {
       </div>
       <div class="actions-row">
         <button class="btn btn-primary" id="previewImportButton" type="button">Verificar dados</button>
-        <button class="btn btn-secondary" id="applyImportButton" type="button" disabled>Importar</button>
+        <button class="btn btn-secondary" id="applyImportButton" type="button" disabled>Revisar/aprovar</button>
         <button class="btn btn-ghost" id="saveImportTemplateButton" type="button">Salvar padrão</button>
         <button class="btn btn-ghost" id="resetImportTemplateButton" type="button">Resetar modelo</button>
         <button class="btn btn-ghost" id="clearImportButton" type="button">Limpar</button>
@@ -918,12 +924,17 @@ async function renderSapImport(container) {
       document.getElementById('importMapping').innerHTML = renderImportMapping(finalAnalysis, templateMatch);
       currentImportPlan = await supabasePreviewImportProducts({
         tipo: document.getElementById('importType').value,
+        region: document.getElementById('importRegion').value,
         texto: text,
+        fileName: document.getElementById('importFile').files && document.getElementById('importFile').files[0]
+          ? document.getElementById('importFile').files[0].name
+          : null,
         portalTexto: document.getElementById('importPortalText').value,
         mapping: getCurrentImportMapping()
       });
       preview.innerHTML = renderImportPreview(currentImportPlan, { automatic: true, templateMatch });
       const ready = !Number(currentImportPlan.errorCount || 0);
+      applyButton.textContent = 'Revisar/aprovar';
       message.style.color = ready ? 'var(--success)' : 'var(--accent)';
       message.textContent = ready
         ? (Number(currentImportPlan.warningCount || 0) ? 'Existem alertas para conferencia, mas a importacao pode continuar.' : 'Nenhum erro encontrado. Importacao pronta para aprovacao.')
@@ -949,12 +960,17 @@ async function renderSapImport(container) {
     const text = document.getElementById('importText').value;
     currentImportPlan = await supabasePreviewImportProducts({
       tipo: document.getElementById('importType').value,
+      region: document.getElementById('importRegion').value,
       texto: text,
+      fileName: document.getElementById('importFile').files && document.getElementById('importFile').files[0]
+        ? document.getElementById('importFile').files[0].name
+        : null,
       portalTexto: document.getElementById('importPortalText').value,
       mapping: getCurrentImportMapping()
     });
     preview.innerHTML = renderImportPreview(currentImportPlan, { automatic });
     const ready = !Number(currentImportPlan.errorCount || 0);
+    applyButton.textContent = 'Revisar/aprovar';
     message.style.color = ready ? 'var(--success)' : 'var(--accent)';
     message.textContent = ready
       ? (Number(currentImportPlan.warningCount || 0) ? 'Existem alertas para conferencia, mas a importacao pode continuar.' : messageText)
@@ -994,6 +1010,12 @@ async function renderSapImport(container) {
     scheduleImportAnalysis();
   });
 
+  document.getElementById('importRegion').addEventListener('change', () => {
+    currentImportPlan = null;
+    document.getElementById('applyImportButton').disabled = true;
+    document.getElementById('importPreview').innerHTML = '<div class="empty-state">Filial alterada. Recalcule a previa antes de importar.</div>';
+  });
+
   document.getElementById('importMapping').addEventListener('change', (event) => {
     if (!event.target.matches('[data-import-map]')) return;
     currentImportPlan = null;
@@ -1030,6 +1052,68 @@ async function renderSapImport(container) {
     if (action === 'reset') {
       resetImportMappingTemplate(document.getElementById('importType').value);
       await analyzeImportAutomatically({ detectType: false, reason: 'reset' });
+    }
+  });
+
+  document.getElementById('importPreview').addEventListener('click', async (event) => {
+    const action = event.target.dataset.importApprovalAction;
+    if (!action) return;
+    const message = document.getElementById('importMessage');
+    const preview = document.getElementById('importPreview');
+    const mainButton = document.getElementById('applyImportButton');
+    if (!currentImportPlan) return;
+
+    if (action === 'back') {
+      preview.innerHTML = renderImportPreview(currentImportPlan);
+      mainButton.disabled = Number(currentImportPlan.errorCount || 0) > 0;
+      mainButton.textContent = 'Revisar/aprovar';
+      message.textContent = 'Previa restaurada.';
+      message.style.color = 'var(--muted)';
+      return;
+    }
+
+    if (action === 'approve') {
+      const button = event.target;
+      button.disabled = true;
+      message.style.color = 'var(--muted)';
+      message.textContent = 'Aprovando lote para importacao definitiva...';
+      try {
+        saveCurrentImportMappingTemplate();
+        currentImportPlan = await supabaseApproveProductsImport({ batchId: currentImportPlan.batchId });
+        preview.innerHTML = renderImportApproval(currentImportPlan);
+        message.style.color = 'var(--success)';
+        message.textContent = 'Lote aprovado. Agora voce pode importar definitivamente.';
+      } catch (error) {
+        button.disabled = false;
+        message.style.color = 'var(--accent)';
+        message.textContent = error.message;
+      }
+      return;
+    }
+
+    if (action === 'commit') {
+      const button = event.target;
+      button.disabled = true;
+      message.style.color = 'var(--muted)';
+      message.textContent = 'Importando lote aprovado...';
+      try {
+        const data = await supabaseImportProducts({
+          batchId: currentImportPlan.batchId,
+          onProgress: () => {
+            message.textContent = 'Importando lote aprovado...';
+          }
+        });
+        message.style.color = 'var(--success)';
+        message.textContent = 'Importacao aplicada com sucesso.';
+        preview.innerHTML = renderImportResult(data.summary || data);
+        currentImportPlan = null;
+        mainButton.disabled = true;
+        mainButton.textContent = 'Revisar/aprovar';
+      } catch (error) {
+        button.disabled = false;
+        message.style.color = 'var(--accent)';
+        message.textContent = error.message;
+      }
     }
   });
 
@@ -1102,24 +1186,9 @@ async function renderSapImport(container) {
       message.textContent = 'Importacao bloqueada: existem erros que precisam ser corrigidos.';
       return;
     }
-    message.textContent = 'Importando lote aprovado...';
-    try {
-      saveCurrentImportMappingTemplate();
-      const data = await supabaseImportProducts({
-        batchId: currentImportPlan.batchId,
-        onProgress: (progress) => {
-          message.textContent = 'Importando lote aprovado...';
-        }
-      });
-      message.style.color = 'var(--success)';
-      message.textContent = 'Importacao aplicada com sucesso.';
-      preview.innerHTML = renderImportResult(data.summary || data);
-      currentImportPlan = null;
-    } catch (error) {
-      message.style.color = 'var(--accent)';
-      message.textContent = error.message;
-      button.disabled = false;
-    }
+    preview.innerHTML = renderImportApproval(currentImportPlan);
+    message.textContent = 'Revise o resumo, alertas e amostra antes de aprovar.';
+    button.textContent = 'Revisao aberta';
   });
 }
 
@@ -1418,6 +1487,7 @@ function renderImportPreview(plan, options = {}) {
       <article><span>Novos</span><strong>${plan.newCount}</strong></article>
       <article><span>Atualizacoes</span><strong>${plan.existingCount}</strong></article>
       <article><span>Erros</span><strong>${plan.errorCount || plan.invalidRows.length || 0}</strong></article>
+      <article><span>Ignorados</span><strong>${plan.ignoredCount || 0}</strong></article>
       <article><span>Alertas</span><strong>${plan.warningCount || 0}</strong></article>
       <article><span>Preco alterado</span><strong>${plan.priceChanged || 0}</strong></article>
       <article><span>Estoque alterado</span><strong>${plan.stockChanged || 0}</strong></article>
@@ -1435,6 +1505,62 @@ function renderImportPreview(plan, options = {}) {
   `;
 }
 
+function renderImportApproval(plan) {
+  const approved = String(plan.status || '').toLowerCase() === 'approved';
+  const imported = ['imported', 'committed'].includes(String(plan.status || '').toLowerCase());
+  const blocked = Number(plan.errorCount || 0) > 0;
+  const statusLabel = approved ? 'Aprovado' : imported ? 'Importado' : blocked ? 'Bloqueado' : 'Validado';
+  const warningText = Number(plan.warningCount || 0)
+    ? `${plan.warningCount} alerta(s) serao aceitos ao aprovar este lote.`
+    : 'Nenhum alerta pendente.';
+  const errorText = blocked
+    ? `<div class="import-warnings"><strong>Lote bloqueado</strong><span>Existem erros criticos. Corrija a planilha e gere uma nova previa.</span></div>`
+    : '';
+
+  return `
+    <div class="panel-header">
+      <div>
+        <h2>Revisao e aprovacao do lote</h2>
+        <p>Confira os totais antes de gravar os produtos definitivamente.</p>
+      </div>
+      <div class="status-pill">${escapeHtml(statusLabel)}</div>
+    </div>
+    <div class="import-summary">
+      <article><span>Linhas</span><strong>${plan.totalRows}</strong></article>
+      <article><span>Validas</span><strong>${plan.validRows}</strong></article>
+      <article><span>Novos</span><strong>${plan.newCount}</strong></article>
+      <article><span>Atualizacoes</span><strong>${plan.existingCount}</strong></article>
+      <article><span>Erros</span><strong>${plan.errorCount || 0}</strong></article>
+      <article><span>Ignorados</span><strong>${plan.ignoredCount || 0}</strong></article>
+      <article><span>Alertas</span><strong>${plan.warningCount || 0}</strong></article>
+      <article><span>Status</span><strong>${escapeHtml(plan.status || 'validated')}</strong></article>
+    </div>
+    ${errorText}
+    <div class="import-warnings">
+      <strong>Conferencia obrigatoria</strong>
+      <span>${escapeHtml(warningText)} Depois de importar, as alteracoes serao registradas na auditoria do lote.</span>
+    </div>
+    ${plan.warningRows && plan.warningRows.length ? `
+      <div class="import-warnings">
+        <strong>Principais alertas</strong>
+        <span>${plan.warningRows.slice(0, 10).map((row) => `Linha ${row.linha}: ${escapeHtml(row.motivo)}`).join(' | ')}</span>
+      </div>
+    ` : ''}
+    ${plan.differences && plan.differences.length ? `
+      <div class="import-warnings">
+        <strong>Diferencas para auditar</strong>
+        <span>${plan.differences.slice(0, 10).map((row) => `${escapeHtml(row.codigo || '')}: ${escapeHtml((row.warnings || []).join(', '))}`).join(' | ')}</span>
+      </div>
+    ` : ''}
+    ${renderImportTable(plan.preview)}
+    <div class="actions-row">
+      <button class="btn btn-ghost" type="button" data-import-approval-action="back">Voltar para previa</button>
+      <button class="btn btn-secondary" type="button" data-import-approval-action="approve"${approved || blocked || imported ? ' disabled' : ''}>Aprovar lote</button>
+      <button class="btn btn-primary" type="button" data-import-approval-action="commit"${approved ? '' : ' disabled'}>Importar definitivo</button>
+    </div>
+  `;
+}
+
 function renderImportResult(summary) {
   return `
     <div class="import-summary">
@@ -1442,7 +1568,8 @@ function renderImportResult(summary) {
       <article><span>Validos</span><strong>${summary.validRows || 0}</strong></article>
       <article><span>Novos</span><strong>${summary.newCount || summary.novos || 0}</strong></article>
       <article><span>Atualizados</span><strong>${summary.updatedCount || summary.atualizados || 0}</strong></article>
-      <article><span>Status</span><strong>${escapeHtml(summary.status || 'committed')}</strong></article>
+      <article><span>Ignorados</span><strong>${summary.ignoredCount || summary.invalidRows || 0}</strong></article>
+      <article><span>Status</span><strong>${escapeHtml(summary.status || 'importado')}</strong></article>
     </div>
   `;
 }
