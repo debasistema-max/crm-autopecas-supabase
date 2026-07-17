@@ -5,6 +5,7 @@ const MODULES = {
   quoteReports: { title: 'Cotacoes', permission: ['cotacoes', 'nova_cotacao'], render: renderQuotationsReport },
   partners: { title: 'Parceiros de Negocios', permission: 'parceiros', render: renderBusinessPartners },
   sap: { title: 'Importacao SAP', permission: 'alimentacao', render: renderSapImport },
+  importBatches: { title: 'Lotes de Importacao', permission: 'visualizar_lotes_importacao', render: renderImportBatches },
   cadastros: { title: 'Cadastros', permission: 'cadastros', render: renderCadastrosClientes },
   portalCadastros: { title: 'Portal Clientes', permission: 'usuarios', adminOnly: true, render: renderPortalCadastrosControle },
   users: { title: 'Usuarios', permission: 'usuarios', render: renderUsers },

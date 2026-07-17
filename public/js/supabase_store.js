@@ -87,6 +87,61 @@ async function supabaseGetDashboard() {
   return data || {};
 }
 
+async function supabaseListImportBatchesReport(filters = {}) {
+  const { data, error } = await supabaseClient.rpc('get_products_import_batches_report', {
+    filters: normalizeImportBatchFilters(filters)
+  });
+  if (error) throw formatImportBatchReportError(error);
+  return data || { summary: {}, pagination: {}, rows: [] };
+}
+
+async function supabaseGetImportBatchDetails(batchId, params = {}) {
+  if (!batchId) throw new Error('Lote nao informado.');
+  const { data, error } = await supabaseClient.rpc('get_products_import_batch_details', {
+    batch_id: batchId,
+    page: Number(params.page || 1),
+    page_size: Number(params.pageSize || 25)
+  });
+  if (error) throw formatImportBatchReportError(error);
+  return data || { batch: {}, items: [], itemsPagination: {}, audit: [] };
+}
+
+function normalizeImportBatchFilters(filters = {}) {
+  const allowedPageSizes = [25, 50, 100];
+  const pageSize = Number(filters.pageSize || filters.page_size || 25);
+  return {
+    page: Number(filters.page || 1),
+    page_size: allowedPageSizes.includes(pageSize) ? pageSize : 25,
+    date_from: filters.dateFrom || filters.date_from || '',
+    date_to: filters.dateTo || filters.date_to || '',
+    status: filters.status || '',
+    region: filters.region || '',
+    user: filters.user || '',
+    search: filters.search || '',
+    source_name: filters.sourceName || filters.source_name || '',
+    error_only: filters.errorOnly === true,
+    imported_only: filters.importedOnly === true,
+    pending_only: filters.pendingOnly === true
+  };
+}
+
+function formatImportBatchReportError(error) {
+  const message = String(error?.message || '');
+  console.error('Erro no relatorio de lotes de importacao:', {
+    message: error?.message,
+    code: error?.code,
+    details: error?.details,
+    hint: error?.hint
+  });
+  if (message.includes('SEM_PERMISSAO_VISUALIZAR_LOTES')) {
+    return new Error('Voce nao tem permissao para visualizar os lotes de importacao.');
+  }
+  if (message.toLowerCase().includes('could not find the function')) {
+    return new Error('RPC de relatorio de lotes nao encontrada. Rode a migration 021 no Supabase.');
+  }
+  return new Error('Nao foi possivel carregar os lotes de importacao.');
+}
+
 async function supabaseSearchProducts(params) {
   if (params.context === 'produtos' || params.listaGeral || params.grupo || params.linha) {
     return supabaseListProducts(params);
