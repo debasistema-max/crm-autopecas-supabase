@@ -68,7 +68,7 @@ function setupNavigation() {
 }
 
 function applyNavigationVisibility() {
-  const allowed = currentSession.modules || [];
+  const allowed = Array.isArray(currentSession && currentSession.modules) ? currentSession.modules : null;
   document.querySelectorAll('.nav-item').forEach((button) => {
     const module = MODULES[button.dataset.module];
     const blockedByPermission = !!(module && !hasModuleAccess(module, allowed));
@@ -120,9 +120,11 @@ function isCurrentUserAdmin() {
 }
 
 function hasModuleAccess(module, allowed) {
+  if (!module) return false;
   if (isCurrentUserAdmin()) return true;
-  if (!allowed.length) return true;
-  const permissions = Array.isArray(module.permission) ? module.permission : [module.permission];
+  const permissions = (Array.isArray(module.permission) ? module.permission : [module.permission]).filter(Boolean);
+  if (!permissions.length) return true;
+  if (!Array.isArray(allowed)) return false;
   return permissions.some((permission) => allowed.includes(permission));
 }
 

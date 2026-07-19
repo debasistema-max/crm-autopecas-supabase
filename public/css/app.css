@@ -182,6 +182,84 @@
   gap: 16px;
 }
 
+.commercial-dashboard {
+  margin-bottom: 16px;
+}
+
+.dashboard-header {
+  align-items: flex-start;
+}
+
+.dashboard-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.dashboard-filters label {
+  display: grid;
+  gap: 6px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.dashboard-filters input,
+.dashboard-filters select {
+  min-height: 38px;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.dashboard-subtitle {
+  margin: 16px 0 10px;
+  font-size: 14px;
+}
+
+.dashboard-detail-list {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 8px 12px;
+  font-size: 13px;
+}
+
+.dashboard-detail-list span {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.dashboard-detail-list strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.activity-list {
+  display: grid;
+  gap: 10px;
+}
+
+.activity-item {
+  display: grid;
+  gap: 4px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.activity-item:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.activity-item span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .table-wrap {
   max-width: 100%;
   overflow-x: auto;
@@ -978,6 +1056,8 @@ button:disabled {
   .icon-button { display: inline-grid; place-items: center; }
   .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dashboard-report-grid { grid-template-columns: 1fr; }
+  .dashboard-grid { grid-template-columns: 1fr; }
+  .dashboard-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .import-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .import-format { grid-template-columns: 1fr; }
   .mapping-grid { grid-template-columns: 1fr; }
@@ -1015,6 +1095,15 @@ button:disabled {
   }
   .content { padding: 12px; }
   .cards { grid-template-columns: 1fr; }
+  .dashboard-header {
+    display: grid;
+  }
+  .dashboard-filters {
+    grid-template-columns: 1fr;
+  }
+  .dashboard-detail-list {
+    grid-template-columns: 1fr;
+  }
   .import-summary { grid-template-columns: 1fr; }
   .mapping-row { grid-template-columns: 1fr; }
   .field-grid { grid-template-columns: 1fr; }

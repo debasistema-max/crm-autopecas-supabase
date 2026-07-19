@@ -87,6 +87,55 @@ async function supabaseGetDashboard() {
   return data || {};
 }
 
+async function supabaseGetCommercialDashboardSummary(filters = {}) {
+  const { data, error } = await supabaseClient.rpc('get_commercial_dashboard_summary', {
+    filters: normalizeCommercialDashboardFilters(filters)
+  });
+  if (error) throw formatCommercialDashboardError(error);
+  return data || {};
+}
+
+function normalizeCommercialDashboardFilters(filters = {}) {
+  return {
+    date_from: filters.dateFrom || filters.date_from || '',
+    date_to: filters.dateTo || filters.date_to || '',
+    region: filters.region || '',
+    seller_id: filters.sellerId || filters.seller_id || ''
+  };
+}
+
+function formatCommercialDashboardError(error) {
+  const message = String(error?.message || '');
+  console.error('Erro no Dashboard Comercial:', {
+    message: error?.message,
+    code: error?.code,
+    details: error?.details,
+    hint: error?.hint
+  });
+  if (message.toLowerCase().includes('could not find the function')) {
+    return new Error('Dashboard Comercial ainda nao esta ativo no Supabase. Rode a migration 022 para habilitar os novos indicadores.');
+  }
+  if (message.includes('SEM_PERMISSAO')) {
+    return new Error('Voce nao tem permissao para carregar o Dashboard Comercial.');
+  }
+  if (message.includes('PERIODO_INVALIDO')) {
+    return new Error('A data final precisa ser maior ou igual a data inicial.');
+  }
+  if (message.includes('DATA_INVALIDA')) {
+    return new Error('Informe datas validas para carregar o dashboard.');
+  }
+  if (message.includes('PERIODO_MUITO_LONGO')) {
+    return new Error('Selecione um periodo menor para carregar o dashboard.');
+  }
+  if (message.includes('REGIAO_INVALIDA')) {
+    return new Error('Regiao invalida. Use SP ou PR.');
+  }
+  if (message.includes('VENDEDOR_INVALIDO')) {
+    return new Error('Vendedor invalido para o filtro informado.');
+  }
+  return new Error('Nao foi possivel carregar o Dashboard Comercial.');
+}
+
 async function supabaseListImportBatchesReport(filters = {}) {
   const { data, error } = await supabaseClient.rpc('get_products_import_batches_report', {
     filters: normalizeImportBatchFilters(filters)
