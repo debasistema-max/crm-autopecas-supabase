@@ -8,6 +8,8 @@ async function renderCreateQuotation(container) {
   quoteItems = [];
   quoteSelectedProduct = null;
   quoteCreateSaved = false;
+  const companySettings = await loadCompanySettings();
+  const branchLabel = formatCompanyBranchLabel(companySettings);
   container.innerHTML = `
     <section class="sap-document">
       <div class="sap-titlebar">
@@ -20,7 +22,7 @@ async function renderCreateQuotation(container) {
           <div class="sap-form-grid">
             <div class="sap-form-left">
               <label>Filial
-                <select id="quoteBranch"><option>(MA/PR) International Parts Service do Brasil Ltda</option></select>
+                <select id="quoteBranch"><option>${escapeHtml(branchLabel)}</option></select>
               </label>
               <div class="sap-inline-fields">
                 <label>Cliente | CPF/CNPJ
@@ -853,6 +855,7 @@ function showDocumentEditForm(kind, row) {
   const title = kind === 'pedidos' ? 'Pedido de venda' : 'Cotacao de venda';
   const dateLabel = kind === 'pedidos' ? 'Dt.Pedido' : 'Dt.Cotacao';
   const regionValue = row.regiao === 'PR' ? '01 - MATRIZ - PR' : '02 - FILIAL - SP';
+  const branchLabel = formatCompanyBranchLabel(cachedCompanySettings || DEFAULT_COMPANY_SETTINGS);
   window[`${kind}EditingItems`] = normalizeDocumentItems(row[itemsKey] || []);
   window[`${kind}EditDirty`] = false;
   panel.hidden = false;
@@ -867,7 +870,7 @@ function showDocumentEditForm(kind, row) {
           <h3>Dados gerais</h3>
           <div class="sap-form-grid">
             <div class="sap-form-left">
-              <label>Filial<input type="text" value="(MA/PR) International Parts Service do Brasil Ltda" readonly></label>
+              <label>Filial<input type="text" value="${escapeHtml(branchLabel)}" readonly></label>
               <div class="sap-inline-fields">
                 <label>Cliente | CPF/CNPJ
                   <input type="text" value="${escapeHtml(row.codigo_sap_cliente || '')}" readonly>

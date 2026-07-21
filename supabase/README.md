@@ -1,4 +1,4 @@
-# CRM Autopecas no Supabase
+# CRM no Supabase
 
 ## Arquitetura final
 

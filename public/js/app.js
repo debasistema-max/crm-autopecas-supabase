@@ -8,13 +8,15 @@ const MODULES = {
   importBatches: { title: 'Lotes de Importacao', permission: 'visualizar_lotes_importacao', render: renderImportBatches },
   cadastros: { title: 'Cadastros', permission: 'cadastros', render: renderCadastrosClientes },
   portalCadastros: { title: 'Portal Clientes', permission: 'usuarios', adminOnly: true, render: renderPortalCadastrosControle },
+  companySettings: { title: 'Configuracoes da Empresa', permission: ['configuracoes_empresa', 'configuracoes'], adminOnly: true, render: renderCompanySettings },
   users: { title: 'Usuarios', permission: 'usuarios', render: renderUsers },
   logs: { title: 'Logs', permission: 'logs', render: renderLogs }
 };
 
 const MODULE_ALIASES = {
   orders: { module: 'ordersReport' },
-  quoteCreate: { module: 'quoteReports', action: 'create' }
+  quoteCreate: { module: 'quoteReports', action: 'create' },
+  settings: { module: 'companySettings' }
 };
 
 let currentSession = null;
@@ -58,6 +60,7 @@ function bootstrapAppShell() {
 
 function applySessionToShell() {
   document.getElementById('userName').textContent = currentSession.nome || currentSession.usuario || 'Usuario';
+  loadCompanySettings().catch((error) => console.warn(error));
 }
 
 function setupNavigation() {

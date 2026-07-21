@@ -5,12 +5,94 @@ const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const MAX_TOTAL_UPLOAD_BYTES = 15 * 1024 * 1024;
 const MAX_UPLOAD_FILES = 5;
 const ALLOWED_UPLOAD_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+const DEFAULT_PORTAL_IDENTITY = {
+  company_name: 'Nova Empresa',
+  trade_name: '',
+  logo_url: '../assets/logo-neutral.svg',
+  primary_color: '#0b7063',
+  secondary_color: '#064f47',
+  email: '',
+  phone: '',
+  whatsapp: '',
+  website: '',
+  language: 'pt-BR'
+};
 
 document.addEventListener('DOMContentLoaded', () => {
+  loadPortalCompanyIdentity().catch((error) => console.warn('Company identity unavailable.', error));
   restoreDraft();
   bindEvents();
   updateStep();
 });
+
+async function loadPortalCompanyIdentity() {
+  const identity = await fetchPortalCompanyIdentity();
+  applyPortalCompanyIdentity(identity);
+  return identity;
+}
+
+async function fetchPortalCompanyIdentity() {
+  if (!isPortalSupabaseReady()) return Object.assign({}, DEFAULT_PORTAL_IDENTITY);
+  const { data, error } = await portalSupabase.rpc('get_public_company_identity');
+  if (error) {
+    console.warn('Public company identity unavailable.', error);
+    return Object.assign({}, DEFAULT_PORTAL_IDENTITY);
+  }
+  return normalizePortalCompanyIdentity(data || {});
+}
+
+function normalizePortalCompanyIdentity(identity = {}) {
+  return Object.assign({}, DEFAULT_PORTAL_IDENTITY, identity, {
+    company_name: String(identity.company_name || DEFAULT_PORTAL_IDENTITY.company_name).trim(),
+    logo_url: String(identity.logo_url || DEFAULT_PORTAL_IDENTITY.logo_url).trim(),
+    primary_color: normalizePortalColor(identity.primary_color, DEFAULT_PORTAL_IDENTITY.primary_color),
+    secondary_color: normalizePortalColor(identity.secondary_color, DEFAULT_PORTAL_IDENTITY.secondary_color),
+    language: String(identity.language || DEFAULT_PORTAL_IDENTITY.language).trim()
+  });
+}
+
+function normalizePortalColor(value, fallback) {
+  const color = String(value || '').trim();
+  return /^#[0-9A-Fa-f]{6}$/.test(color) ? color : fallback;
+}
+
+function applyPortalCompanyIdentity(identity) {
+  const settings = normalizePortalCompanyIdentity(identity);
+  const displayName = settings.trade_name || settings.company_name || DEFAULT_PORTAL_IDENTITY.company_name;
+  document.documentElement.style.setProperty('--primary', settings.primary_color);
+  document.documentElement.style.setProperty('--primary-strong', settings.secondary_color);
+  document.documentElement.lang = settings.language || 'pt-BR';
+  document.title = displayName + ' | Cadastro de Cliente';
+  document.querySelectorAll('[data-company-kicker]').forEach((node) => {
+    node.textContent = displayName;
+  });
+  document.querySelectorAll('[data-company-logo]').forEach((node) => {
+    applyPortalCompanyLogo(node, settings.logo_url, displayName);
+  });
+  document.querySelectorAll('[data-company-contact]').forEach((node) => {
+    node.textContent = [settings.whatsapp || settings.phone, settings.email, settings.website].filter(Boolean).join(' | ');
+  });
+}
+
+function applyPortalCompanyLogo(node, logoUrl, displayName) {
+  const fallback = DEFAULT_PORTAL_IDENTITY.logo_url;
+  node.onerror = () => {
+    if (node.dataset.logoFallbackApplied === 'true') return;
+    node.dataset.logoFallbackApplied = 'true';
+    node.src = fallback;
+  };
+  node.dataset.logoFallbackApplied = 'false';
+  node.src = resolvePortalLogoUrl(logoUrl || fallback);
+  node.alt = displayName || DEFAULT_PORTAL_IDENTITY.company_name;
+}
+
+function resolvePortalLogoUrl(logoUrl) {
+  const value = String(logoUrl || '').trim();
+  if (!value) return DEFAULT_PORTAL_IDENTITY.logo_url;
+  if (/^(https?:|data:|blob:|\/)/i.test(value) || value.startsWith('../')) return value;
+  if (value.startsWith('assets/')) return '../' + value;
+  return value;
+}
 
 function bindEvents() {
   document.getElementById('nextStep').addEventListener('click', nextStep);

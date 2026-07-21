@@ -8,6 +8,8 @@ async function renderOrders(container) {
   orderItems = [];
   orderSelectedProduct = null;
   orderCreateSaved = false;
+  const companySettings = await loadCompanySettings();
+  const branchLabel = formatCompanyBranchLabel(companySettings);
   container.innerHTML = `
     <section class="sap-document">
       <div class="sap-titlebar">
@@ -20,7 +22,7 @@ async function renderOrders(container) {
           <div class="sap-form-grid">
             <div class="sap-form-left">
               <label>Filial
-                <select id="orderBranch"><option>(MA/PR) International Parts Service do Brasil Ltda</option></select>
+                <select id="orderBranch"><option>${escapeHtml(branchLabel)}</option></select>
               </label>
               <div class="sap-inline-fields">
                 <label>Cliente | CPF/CNPJ

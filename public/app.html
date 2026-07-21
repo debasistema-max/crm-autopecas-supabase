@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CRM Autopecas</title>
+  <title>Nova Empresa | CRM</title>
   <link rel="stylesheet" href="css/theme.css?v=20260701-5">
   <link rel="stylesheet" href="css/app.css?v=20260719-dashboard-v21-1">
 </head>
@@ -11,8 +11,8 @@
   <div class="app-shell">
     <aside class="sidebar" id="sidebar">
       <a class="sidebar-brand" href="#dashboard" aria-label="Inicio">
-        <img src="assets/logo.png" alt="" class="sidebar-logo">
-        <span>CRM Autopecas</span>
+        <img src="assets/logo-neutral.svg" alt="" class="sidebar-logo" data-company-logo>
+        <span data-company-name>Nova Empresa</span>
       </a>
       <nav class="side-nav" aria-label="Modulos">
         <button class="nav-item is-active" data-module="dashboard">Dashboard</button>
@@ -24,6 +24,7 @@
         <button class="nav-item" data-module="importBatches">Lotes de Importacao</button>
         <button class="nav-item" data-module="cadastros">Cadastros</button>
         <button class="nav-item" data-module="portalCadastros">Portal Clientes</button>
+        <button class="nav-item" data-module="companySettings">Configuracoes da Empresa</button>
         <button class="nav-item" data-module="users">Usuarios</button>
         <button class="nav-item" data-module="logs">Logs</button>
       </nav>
@@ -50,6 +51,7 @@
   <script src="js/config.js?v=20260701-5"></script>
   <script src="js/supabase.js?v=20260701-5"></script>
   <script src="js/supabase_store.js?v=20260719-dashboard-v21-1"></script>
+  <script src="js/company_settings.js?v=20260720-1"></script>
   <script src="js/auth.js?v=20260701-5"></script>
   <script src="js/dashboard.js?v=20260719-dashboard-v21-1"></script>
   <script src="js/products.js?v=20260702-3"></script>
@@ -59,6 +61,6 @@
   <script src="js/cadastros.js?v=20260703-1"></script>
   <script src="js/quotes.js?v=20260703-3"></script>
   <script src="js/users.js?v=20260702-2"></script>
-  <script src="js/app.js?v=20260719-dashboard-v21-1"></script>
+  <script src="js/app.js?v=20260720-white-label-1"></script>
 </body>
 </html>
