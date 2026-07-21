@@ -539,16 +539,43 @@ function onlyDigits(value) {
   return String(value || '').replace(/\D/g, '');
 }
 
+const commercialFlowAvailability = {
+  enhanced: null,
+  warned: false
+};
+
+async function callCommercialRpc(name, args, fallbackName, fallbackArgs) {
+  if (commercialFlowAvailability.enhanced === false) {
+    if (!fallbackName) throw new Error('Recurso disponivel apos a aplicacao da migration 025.');
+    const fallback = await supabaseClient.rpc(fallbackName, fallbackArgs || args);
+    if (fallback.error) throw fallback.error;
+    return fallback.data;
+  }
+
+  const result = await supabaseClient.rpc(name, args);
+  if (!result.error) {
+    commercialFlowAvailability.enhanced = true;
+    return result.data;
+  }
+  if (!isMissingSupabaseResource(result.error)) throw result.error;
+
+  commercialFlowAvailability.enhanced = false;
+  if (!commercialFlowAvailability.warned) {
+    commercialFlowAvailability.warned = true;
+    console.info('Fluxo Comercial: recursos complementares indisponiveis ate aplicar a migration 025.');
+  }
+  if (!fallbackName) throw new Error('Recurso disponivel apos a aplicacao da migration 025.');
+  const fallback = await supabaseClient.rpc(fallbackName, fallbackArgs || args);
+  if (fallback.error) throw fallback.error;
+  return fallback.data;
+}
+
 async function supabaseCreateOrder(payload) {
-  const { data, error } = await supabaseClient.rpc('create_order', { payload });
-  if (error) throw error;
-  return data || {};
+  return (await callCommercialRpc('commercial_create_order', { payload }, 'create_order', { payload })) || {};
 }
 
 async function supabaseCreateQuotation(payload) {
-  const { data, error } = await supabaseClient.rpc('create_quotation', { payload });
-  if (error) throw error;
-  return data || {};
+  return (await callCommercialRpc('commercial_create_quotation', { payload }, 'create_quotation', { payload })) || {};
 }
 
 async function supabaseListOrdersReport(filters = {}) {
@@ -588,39 +615,57 @@ async function supabaseListQuotationsReport(filters = {}) {
 }
 
 async function supabaseUpdateOrderReport(payload = {}) {
-  const { data, error } = await supabaseClient.rpc('update_order_items', {
-    payload: sanitizeDocumentItemsUpdate(payload)
-  });
-  if (error) throw error;
-  return data || {};
+  const cleanPayload = sanitizeDocumentItemsUpdate(payload);
+  return (await callCommercialRpc('commercial_update_order_items', { payload: cleanPayload }, 'update_order_items', { payload: cleanPayload })) || {};
 }
 
 async function supabaseUpdateQuotationReport(payload = {}) {
-  const { data, error } = await supabaseClient.rpc('update_quotation_items', {
-    payload: sanitizeDocumentItemsUpdate(payload)
-  });
-  if (error) throw error;
-  return data || {};
+  const cleanPayload = sanitizeDocumentItemsUpdate(payload);
+  return (await callCommercialRpc('commercial_update_quotation_items', { payload: cleanPayload }, 'update_quotation_items', { payload: cleanPayload })) || {};
 }
 
 async function supabaseUpdateOrderStatus(payload = {}) {
   if (!payload.id) throw new Error('Pedido nao informado.');
   if (!payload.status) throw new Error('Status nao informado.');
-  const { data, error } = await supabaseClient.rpc('update_document_status', {
-    payload: { type: 'pedido', id: payload.id, status: payload.status }
-  });
-  if (error) throw error;
-  return data || {};
+  return (await callCommercialRpc(
+    'commercial_update_order_status',
+    { target_id: payload.id, target_status: payload.status },
+    'update_document_status',
+    { payload: { type: 'pedido', id: payload.id, status: payload.status } }
+  )) || {};
 }
 
 async function supabaseUpdateQuotationStatus(payload = {}) {
   if (!payload.id) throw new Error('Cotacao nao informada.');
   if (!payload.status) throw new Error('Status nao informado.');
-  const { data, error } = await supabaseClient.rpc('update_document_status', {
-    payload: { type: 'cotacao', id: payload.id, status: payload.status }
-  });
-  if (error) throw error;
-  return data || {};
+  return (await callCommercialRpc(
+    'commercial_update_quotation_status',
+    { target_id: payload.id, target_status: payload.status },
+    'update_document_status',
+    { payload: { type: 'cotacao', id: payload.id, status: payload.status } }
+  )) || {};
+}
+
+async function supabaseGetCustomerCommercialProfile(clientId) {
+  if (!clientId) throw new Error('Cliente nao informado.');
+  return (await callCommercialRpc('get_customer_commercial_profile', { target_client_id: clientId })) || {};
+}
+
+async function supabaseAddCustomerNote(clientId, note) {
+  if (!clientId) throw new Error('Cliente nao informado.');
+  const cleanNote = String(note || '').trim();
+  if (!cleanNote || cleanNote.length > 2000) throw new Error('A observacao deve ter entre 1 e 2000 caracteres.');
+  return (await callCommercialRpc('add_customer_note', { target_client_id: clientId, note_text: cleanNote })) || {};
+}
+
+async function supabaseToggleCustomerFavorite(clientId, favorite) {
+  if (!clientId) throw new Error('Cliente nao informado.');
+  return (await callCommercialRpc('toggle_customer_favorite', { target_client_id: clientId, favorite: Boolean(favorite) })) === true;
+}
+
+async function supabaseConvertQuotationToOrder(quotationId) {
+  if (!quotationId) throw new Error('Cotacao nao informada.');
+  return (await callCommercialRpc('convert_quotation_to_order', { target_quotation_id: quotationId })) || {};
 }
 
 function sanitizeDocumentItemsUpdate(payload = {}) {

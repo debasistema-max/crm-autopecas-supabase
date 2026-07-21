@@ -1467,6 +1467,67 @@ button:disabled {
   opacity: 0.55;
 }
 
+.commercial-profile {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafb;
+}
+
+.commercial-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.commercial-metrics article,
+.commercial-block {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.commercial-metrics span,
+.commercial-list span,
+.commercial-timeline span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.commercial-metrics strong,
+.commercial-list strong,
+.commercial-timeline strong {
+  display: block;
+  margin-top: 4px;
+}
+
+.commercial-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.commercial-block h3 { margin: 0 0 10px; font-size: 16px; }
+.commercial-list { display: grid; gap: 8px; }
+.commercial-list article,
+.commercial-timeline li {
+  padding: 8px 10px;
+  border-left: 3px solid var(--primary);
+  border-radius: 6px;
+  background: #f6f9fb;
+}
+.commercial-list small,
+.commercial-timeline small { color: var(--muted); white-space: pre-wrap; }
+.commercial-note-form { display: grid; gap: 8px; margin-bottom: 12px; }
+.commercial-note-form textarea { min-height: 84px; }
+.commercial-timeline { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.compact-actions { flex-wrap: nowrap; gap: 6px; }
+
 @media (max-width: 980px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -1533,9 +1594,25 @@ button:disabled {
   .import-batch-detail-grid {
     grid-template-columns: 1fr;
   }
+  .commercial-grid { grid-template-columns: 1fr; }
+  .commercial-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 680px) {
+  button,
+  .btn,
+  .nav-item,
+  .icon-button,
+  .sap-mini-button,
+  .sap-tabs button,
+  .sap-search-button,
+  .sap-footer-actions .btn {
+    min-height: 44px;
+  }
+  .icon-button {
+    width: 44px;
+    height: 44px;
+  }
   .topbar {
     grid-template-columns: auto 1fr;
     padding: 12px;
@@ -1614,4 +1691,33 @@ button:disabled {
   .sap-footer-actions {
     flex-wrap: wrap;
   }
+  .commercial-profile { padding: 10px; }
+  .commercial-metrics { grid-template-columns: 1fr; }
+  .compact-actions { flex-wrap: wrap; }
+  .sap-items-wrap { overflow-x: visible; border: 0; }
+  .sap-items-table { display: block; min-width: 0; }
+  .sap-items-table thead,
+  .sap-items-table tfoot { display: none; }
+  .sap-items-table tbody { display: grid; gap: 10px; }
+  .sap-items-table tr { display: grid; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+  .sap-items-table td { display: grid; grid-template-columns: minmax(92px, 36%) minmax(0, 1fr); gap: 8px; align-items: center; border: 0; border-bottom: 1px solid var(--line); text-align: left !important; }
+  .sap-items-table td:last-child { border-bottom: 0; }
+  .sap-items-table td::before { color: var(--muted); font-size: 11px; font-weight: 800; }
+  .sap-items-table td:nth-child(1)::before { content: "Item"; }
+  .sap-items-table td:nth-child(2)::before { content: "Codigo"; }
+  .sap-items-table td:nth-child(3)::before { content: "Descricao"; }
+  .sap-items-table td:nth-child(4)::before { content: "Marca"; }
+  .sap-items-table td:nth-child(5)::before { content: "Aplicacao"; }
+  .sap-items-table td:nth-child(6)::before { content: "Unidade"; }
+  .sap-items-table td:nth-child(7)::before { content: "Quantidade"; }
+  .sap-items-table td:nth-child(8)::before { content: "Preco"; }
+  .sap-items-table td:nth-child(9)::before { content: "Desconto"; }
+  .sap-items-table td:nth-child(10)::before { content: "Preco final"; }
+  .sap-items-table td:nth-child(11)::before { content: "Total"; }
+  .sap-items-table td:nth-child(12)::before { content: "Total impostos"; }
+  .sap-items-table td:nth-child(13)::before { content: "Acao"; }
+  .sap-items-table .sap-empty-row { display: block; }
+  .sap-items-table .sap-empty-row::before { content: none; }
+  .sap-items-table input { min-height: 44px; }
+  .sap-footer-actions .btn { min-height: 44px; }
 }

@@ -237,6 +237,25 @@ async function renderCreateQuotation(container) {
   renderQuoteCart();
 }
 
+function applyQuoteDraft(draft) {
+  if (!draft) return;
+  document.getElementById('quoteRegion').value = draft.regiao || 'SP';
+  document.getElementById('quoteClientSapCode').value = draft.codigo_sap_cliente || '';
+  document.getElementById('quoteCnpj').value = formatCnpj(draft.cnpj || '');
+  document.getElementById('quoteClient').value = draft.cliente || '';
+  document.getElementById('quotePhone').value = draft.telefone || '';
+  document.getElementById('quoteAddress').value = draft.endereco || '';
+  document.getElementById('quoteTerm').value = draft.prazo || document.getElementById('quoteTerm').value;
+  document.getElementById('quoteCarrier').value = draft.transportadora || '';
+  document.getElementById('quoteCarrierCnpj').value = draft.transportadora_cnpj || '';
+  document.getElementById('quoteCarrierAddress').value = draft.transportadora_endereco || '';
+  document.getElementById('quoteNotes').value = draft.observacao || '';
+  quoteItems = (draft.items || []).map((item) => Object.assign({}, item));
+  quoteCreateSaved = false;
+  renderQuoteCart();
+  document.getElementById('quoteMessage').textContent = 'Rascunho carregado. Revise e salve para gerar uma nova cotacao.';
+}
+
 function getQuoteProductSearchTerm() {
   return [
     document.getElementById('quoteProductTerm').value,
@@ -778,8 +797,12 @@ async function openDocumentCreateScreen(kind) {
   document.getElementById('pageTitle').textContent = kind === 'pedidos' ? 'Novo Pedido' : 'Nova Cotacao';
   if (kind === 'pedidos') {
     await renderOrders(content);
+    applyOrderDraft(window.pendingOrderDraft || null);
+    window.pendingOrderDraft = null;
   } else {
     await renderCreateQuotation(content);
+    applyQuoteDraft(window.pendingQuoteDraft || null);
+    window.pendingQuoteDraft = null;
   }
   content.focus();
 }
@@ -833,7 +856,11 @@ function renderDocumentReport(kind, rows) {
               <td>${escapeHtml(row.vendedor || '')}</td>
               <td><span class="status-pill">${escapeHtml(formatDocumentStatus(kind, row.status))}</span></td>
               <td>${money(row.total)}</td>
-              <td><button class="btn btn-secondary" type="button" data-edit-document="${index}">Abrir</button></td>
+              <td><div class="actions-row compact-actions">
+                <button class="btn btn-secondary" type="button" data-edit-document="${index}">Abrir</button>
+                <button class="btn btn-ghost" type="button" data-duplicate-document="${index}">Duplicar</button>
+                ${kind === 'cotacoes' && row.status === 'APROVADA' ? `<button class="btn btn-primary" type="button" data-convert-quotation="${index}">Converter</button>` : ''}
+              </div></td>
             </tr>
           `).join('')}
         </tbody>
@@ -846,6 +873,57 @@ function bindDocumentEditButtons(kind, rows) {
   document.querySelectorAll('[data-edit-document]').forEach((button) => {
     button.addEventListener('click', () => showDocumentEditForm(kind, rows[Number(button.dataset.editDocument)]));
   });
+  document.querySelectorAll('[data-duplicate-document]').forEach((button) => {
+    button.addEventListener('click', () => duplicateCommercialDocument(kind, rows[Number(button.dataset.duplicateDocument)]));
+  });
+  document.querySelectorAll('[data-convert-quotation]').forEach((button) => {
+    button.addEventListener('click', () => convertQuotationFromReport(rows[Number(button.dataset.convertQuotation)], button));
+  });
+}
+
+async function duplicateCommercialDocument(kind, row) {
+  const draft = buildDocumentDraft(kind, row);
+  if (kind === 'pedidos') {
+    window.pendingOrderDraft = draft;
+    await openDocumentCreateScreen('pedidos');
+  } else {
+    window.pendingQuoteDraft = draft;
+    await openDocumentCreateScreen('cotacoes');
+  }
+}
+
+async function convertQuotationFromReport(row, button) {
+  if (!row || !row.id || row.status !== 'APROVADA') return;
+  const message = document.getElementById('cotacoesMessage');
+  button.disabled = true;
+  message.textContent = 'Convertendo cotacao em pedido...';
+  try {
+    const data = await supabaseConvertQuotationToOrder(row.id);
+    message.textContent = 'Cotacao convertida no pedido ' + (data.numero_pedido || '') + '.';
+    await loadDocumentReport('cotacoes');
+  } catch (error) {
+    message.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function buildDocumentDraft(kind, row) {
+  const itemsKey = kind === 'pedidos' ? 'order_items' : 'quotation_items';
+  return {
+    regiao: row.regiao || 'SP',
+    codigo_sap_cliente: row.codigo_sap_cliente || '',
+    cliente: row.cliente || '',
+    cnpj: row.cnpj || '',
+    telefone: row.telefone || '',
+    endereco: row.endereco || '',
+    prazo: row.prazo || '',
+    transportadora: row.transportadora || '',
+    transportadora_cnpj: row.transportadora_cnpj || '',
+    transportadora_endereco: row.transportadora_endereco || '',
+    observacao: row.observacao || '',
+    items: normalizeDocumentItems(row[itemsKey] || [])
+  };
 }
 
 function showDocumentEditForm(kind, row) {

@@ -240,6 +240,25 @@ async function renderOrders(container) {
   renderCart();
 }
 
+function applyOrderDraft(draft) {
+  if (!draft) return;
+  document.getElementById('orderRegion').value = draft.regiao || 'SP';
+  document.getElementById('orderClientSapCode').value = draft.codigo_sap_cliente || '';
+  document.getElementById('orderCnpj').value = formatCnpj(draft.cnpj || '');
+  document.getElementById('orderClient').value = draft.cliente || '';
+  document.getElementById('orderPhone').value = draft.telefone || '';
+  document.getElementById('orderAddress').value = draft.endereco || '';
+  document.getElementById('orderTerm').value = draft.prazo || document.getElementById('orderTerm').value;
+  document.getElementById('orderCarrier').value = draft.transportadora || '';
+  document.getElementById('orderCarrierCnpj').value = draft.transportadora_cnpj || '';
+  document.getElementById('orderCarrierAddress').value = draft.transportadora_endereco || '';
+  document.getElementById('orderNotes').value = draft.observacao || '';
+  orderItems = (draft.items || []).map((item) => Object.assign({}, item));
+  orderCreateSaved = false;
+  renderCart();
+  document.getElementById('orderMessage').textContent = 'Rascunho carregado. Revise e salve para gerar um novo pedido.';
+}
+
 function bindSapTabs(scope) {
   const root = scope || document;
   root.querySelectorAll('[data-sap-tab]').forEach((button) => {

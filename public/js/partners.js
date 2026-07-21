@@ -1,7 +1,8 @@
 let partnersState = {
   tab: 'clientes',
   clients: [],
-  carriers: []
+  carriers: [],
+  currentClientProfile: null
 };
 
 async function renderBusinessPartners(container) {
@@ -56,6 +57,7 @@ async function renderClientsTab(target) {
         <label>Pesquisar cliente<input id="partnerClientSearch" placeholder="Codigo SAP, CNPJ, razao social ou cidade"></label>
         <button class="btn btn-secondary" id="partnerClientSearchButton" type="button">Pesquisar</button>
       </div>
+      <section id="clientCommercialProfile" class="commercial-profile" hidden></section>
       ${renderClientsTable(rows)}
     `;
     document.getElementById('partnerClientForm').addEventListener('submit', savePartnerClient);
@@ -64,7 +66,7 @@ async function renderClientsTab(target) {
     document.getElementById('partnerClientSearch').addEventListener('keydown', (event) => {
       if (event.key === 'Enter') renderClientsTab(target);
     });
-    bindClientEditButtons();
+    bindClientButtons();
   } catch (error) {
     target.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
   }
@@ -111,7 +113,10 @@ function renderClientsTable(rows) {
               <td>${escapeHtml([row.cidade, row.estado].filter(Boolean).join('/'))}</td>
               <td>${escapeHtml(row.telefone || '')}<small>${escapeHtml(row.email || '')}</small></td>
               <td><span class="status-pill ${row.ativo ? 'ok' : 'warn'}">${row.ativo ? 'Ativo' : 'Inativo'}</span></td>
-              <td><button class="btn btn-secondary" type="button" data-edit-client="${index}">Editar</button></td>
+              <td><div class="actions-row compact-actions">
+                <button class="btn btn-secondary" type="button" data-open-client="${index}">Historico</button>
+                <button class="btn btn-ghost" type="button" data-edit-client="${index}">Editar</button>
+              </div></td>
             </tr>
           `).join('')}
         </tbody>
@@ -120,9 +125,12 @@ function renderClientsTable(rows) {
   `;
 }
 
-function bindClientEditButtons() {
+function bindClientButtons() {
   document.querySelectorAll('[data-edit-client]').forEach((button) => {
     button.addEventListener('click', () => fillPartnerClientForm(partnersState.clients[Number(button.dataset.editClient)]));
+  });
+  document.querySelectorAll('[data-open-client]').forEach((button) => {
+    button.addEventListener('click', () => openClientCommercialProfile(partnersState.clients[Number(button.dataset.openClient)]));
   });
 }
 
@@ -176,6 +184,116 @@ async function savePartnerClient(event) {
     message.style.color = 'var(--accent)';
     message.textContent = error.message;
   }
+}
+
+async function openClientCommercialProfile(client) {
+  const target = document.getElementById('clientCommercialProfile');
+  if (!target || !client) return;
+  target.hidden = false;
+  target.innerHTML = '<div class="empty-state compact-state">Carregando historico comercial...</div>';
+  target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  try {
+    const profile = await supabaseGetCustomerCommercialProfile(client.id);
+    partnersState.currentClientProfile = profile;
+    target.innerHTML = renderClientCommercialProfile(profile);
+    bindClientCommercialProfile(profile);
+  } catch (error) {
+    target.innerHTML = `<div class="empty-state compact-state">${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function renderClientCommercialProfile(profile) {
+  const client = profile.client || {};
+  const metrics = profile.metrics || {};
+  return `
+    <div class="panel-header">
+      <div><h2>${escapeHtml(client.nome || '')}</h2><p>${escapeHtml([client.codigo_sap_cliente, formatCnpj(client.cnpj || ''), client.cidade, client.estado].filter(Boolean).join(' - '))}</p></div>
+      <div class="actions-row">
+        <button class="btn ${profile.favorite ? 'btn-primary' : 'btn-secondary'}" id="clientFavoriteButton" type="button">${profile.favorite ? 'Favorito' : 'Marcar favorito'}</button>
+        <button class="btn btn-ghost" id="clientProfileCloseButton" type="button">Fechar</button>
+      </div>
+    </div>
+    <div class="commercial-metrics">
+      <article><span>Valor comprado</span><strong>${money(metrics.purchased_value || 0)}</strong></article>
+      <article><span>Ticket medio</span><strong>${money(metrics.average_ticket || 0)}</strong></article>
+      <article><span>Pedidos</span><strong>${Number(metrics.total_orders || 0)}</strong></article>
+      <article><span>Cotacoes</span><strong>${Number(metrics.total_quotations || 0)}</strong></article>
+      <article><span>Conversao</span><strong>${Number(metrics.conversion_rate || 0).toFixed(2)}%</strong></article>
+    </div>
+    <div class="commercial-grid">
+      <section class="commercial-block"><h3>Ultimos pedidos</h3>${renderCommercialDocumentList('pedidos', profile.orders || [])}</section>
+      <section class="commercial-block"><h3>Ultimas cotacoes</h3>${renderCommercialDocumentList('cotacoes', profile.quotations || [])}</section>
+      <section class="commercial-block">
+        <h3>Observacoes comerciais</h3>
+        <form id="clientNoteForm" class="commercial-note-form">
+          <textarea id="clientCommercialNote" maxlength="2000" placeholder="Nova observacao comercial" required></textarea>
+          <button class="btn btn-primary" type="submit">Salvar observacao</button>
+          <p id="clientCommercialMessage" class="form-message"></p>
+        </form>
+        ${renderClientNotes(profile.notes || [])}
+      </section>
+      <section class="commercial-block"><h3>Timeline do cliente</h3>${renderClientTimeline(profile.timeline || [])}</section>
+    </div>`;
+}
+
+function renderCommercialDocumentList(kind, rows) {
+  if (!rows.length) return '<div class="empty-state compact-state">Nenhum registro.</div>';
+  const numberKey = kind === 'pedidos' ? 'numero_pedido' : 'numero_cotacao';
+  return `<div class="commercial-list">${rows.map((row) => `
+    <article><span>${escapeHtml(formatDateTime(row.created_at))}</span><strong>${escapeHtml(row[numberKey] || '')}</strong><small>${escapeHtml(formatDocumentStatus(kind, row.status))} - ${money(row.total || 0)}</small></article>
+  `).join('')}</div>`;
+}
+
+function renderClientNotes(rows) {
+  if (!rows.length) return '<div class="empty-state compact-state">Nenhuma observacao registrada.</div>';
+  return `<div class="commercial-list note-list">${rows.map((row) => `
+    <article><span>${escapeHtml(formatDateTime(row.created_at))}</span><strong>${escapeHtml(row.usuario || 'Usuario')}</strong><small>${escapeHtml(row.note || '')}</small></article>
+  `).join('')}</div>`;
+}
+
+function renderClientTimeline(rows) {
+  if (!rows.length) return '<div class="empty-state compact-state">Sem historico comercial.</div>';
+  return `<ol class="commercial-timeline">${rows.slice().sort((a, b) => new Date(b.event_at || 0) - new Date(a.event_at || 0)).map((row) => `
+    <li><span>${escapeHtml(formatDateTime(row.event_at))}</span><strong>${escapeHtml(row.title || row.event_type || '')}</strong><small>${escapeHtml(row.description || '')}${row.amount ? ' - ' + money(row.amount) : ''}</small></li>
+  `).join('')}</ol>`;
+}
+
+function bindClientCommercialProfile(profile) {
+  const client = profile.client || {};
+  document.getElementById('clientProfileCloseButton').addEventListener('click', () => {
+    const target = document.getElementById('clientCommercialProfile');
+    target.hidden = true;
+    target.innerHTML = '';
+  });
+  document.getElementById('clientFavoriteButton').addEventListener('click', async () => {
+    const button = document.getElementById('clientFavoriteButton');
+    const next = !button.classList.contains('btn-primary');
+    button.disabled = true;
+    try {
+      const favorite = await supabaseToggleCustomerFavorite(client.id, next);
+      button.className = favorite ? 'btn btn-primary' : 'btn btn-secondary';
+      button.textContent = favorite ? 'Favorito' : 'Marcar favorito';
+    } catch (error) {
+      document.getElementById('clientCommercialMessage').textContent = error.message;
+    } finally {
+      button.disabled = false;
+    }
+  });
+  document.getElementById('clientNoteForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const button = event.currentTarget.querySelector('button[type="submit"]');
+    const message = document.getElementById('clientCommercialMessage');
+    button.disabled = true;
+    message.textContent = 'Salvando observacao...';
+    try {
+      await supabaseAddCustomerNote(client.id, document.getElementById('clientCommercialNote').value);
+      await openClientCommercialProfile(client);
+    } catch (error) {
+      message.textContent = error.message;
+    } finally {
+      button.disabled = false;
+    }
+  });
 }
 
 async function renderCarriersTab(target) {
