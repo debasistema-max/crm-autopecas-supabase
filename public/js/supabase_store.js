@@ -192,7 +192,18 @@ function formatImportBatchReportError(error) {
 }
 
 async function supabaseSearchProducts(params) {
-  if (params.context === 'produtos' || params.listaGeral || params.grupo || params.linha) {
+  if (
+    params.context === 'produtos'
+    || params.listaGeral
+    || params.grupo
+    || params.linha
+    || params.marca
+    || params.montadora
+    || params.disponibilidade
+    || params.comFoto
+    || params.semFoto
+    || params.favoritos
+  ) {
     return supabaseListProducts(params);
   }
   const { data, error } = await supabaseClient.rpc('search_products', {
@@ -206,23 +217,34 @@ async function supabaseSearchProducts(params) {
 }
 
 async function supabaseListProductFilters() {
-  const cached = getStaticCache('productFilters', 10 * 60 * 1000);
-  if (cached) return cached;
+  const cached = getStaticCache('productFiltersV2', 10 * 60 * 1000);
+  if (cached && cached.marcas && cached.montadoras) return cached;
   const { data, error } = await supabaseClient.rpc('get_product_filters');
   if (error) throw error;
-  const filters = data || { grupos: [], linhas: [] };
-  setStaticCache('productFilters', filters);
+  const filters = data || { grupos: [], linhas: [], marcas: [], montadoras: [] };
+  if (!filters.marcas || !filters.montadoras) {
+    const { data: products, error: productError } = await supabaseClient
+      .from('products')
+      .select('marca, montadora')
+      .limit(2000);
+    if (!productError) {
+      filters.marcas = uniqueSorted((products || []).map((product) => product.marca));
+      filters.montadoras = uniqueSorted((products || []).map((product) => product.montadora));
+    }
+  }
+  setStaticCache('productFiltersV2', filters);
   return filters;
 }
 
 async function supabaseListProducts(params = {}) {
   const region = params.regiao || 'SP';
-  const limit = Math.min(Math.max(Number(params.limite || 1000), 1), 5000);
+  const limit = Math.min(Math.max(Number(params.limite || params.pageSize || 60), 1), 200);
+  const offset = Math.max(Number(params.offset || 0), 0);
   let query = supabaseClient
     .from('products')
-    .select('codigo, descricao, marca, aplicacao, ano, estoque, estoque_quantidade, preco_sp, preco_pr, grupo, categoria, montadora, detalhes, oem, similar')
+    .select('codigo, descricao, marca, aplicacao, ano, estoque, estoque_quantidade, preco_sp, preco_pr, status_estoque, status_cadastro, url_imagem, grupo, categoria, montadora, detalhes, oem, similar')
     .order('codigo', { ascending: true })
-    .limit(limit);
+    .range(offset, offset + limit - 1);
 
   const term = String(params.termo || params.q || '').trim();
   if (term) {
@@ -236,12 +258,28 @@ async function supabaseListProducts(params = {}) {
       `categoria.ilike.${pattern}`,
       `montadora.ilike.${pattern}`,
       `oem.ilike.${pattern}`,
-      `similar.ilike.${pattern}`
+      `similar.ilike.${pattern}`,
+      `detalhes.ilike.${pattern}`,
+      `ano.ilike.${pattern}`
     ].join(','));
   }
+  if (params.marca) query = query.eq('marca', params.marca);
   if (params.grupo) query = query.eq('grupo', params.grupo);
   if (params.linha) query = query.eq('categoria', params.linha);
-  if (params.disponiveis === true) query = query.gt('estoque_quantidade', 0);
+  if (params.montadora) query = query.eq('montadora', params.montadora);
+  if (params.disponiveis === true || params.disponibilidade === 'disponivel') query = query.gt('estoque_quantidade', 0);
+  if (params.disponibilidade === 'zerado') query = query.or('estoque_quantidade.eq.0,estoque_quantidade.is.null');
+  if (params.disponibilidade === 'baixo') query = query.gt('estoque_quantidade', 0).lte('estoque_quantidade', 5);
+  if (params.disponibilidade === 'alto') query = query.gt('estoque_quantidade', 20);
+  if (params.comOem === true) query = query.not('oem', 'is', null).neq('oem', '');
+  if (params.comFoto === true) query = query.not('url_imagem', 'is', null).neq('url_imagem', '');
+  if (params.semFoto === true) query = query.or('url_imagem.is.null,url_imagem.eq.');
+
+  if (params.favoritos === true) {
+    const favoriteCodes = await supabaseListProductFavorites();
+    if (!favoriteCodes.length) return [];
+    query = query.in('codigo', favoriteCodes.slice(0, 500));
+  }
 
   const { data, error } = await query;
   if (error) throw error;
@@ -249,6 +287,212 @@ async function supabaseListProducts(params = {}) {
     linha: product.categoria,
     preco: region === 'PR' ? product.preco_pr : product.preco_sp
   }));
+}
+
+const productExperienceAvailability = {
+  favorites: null,
+  recent: null,
+  history: null,
+  topSelling: null,
+  warned: new Set()
+};
+
+async function supabaseListProductFavorites() {
+  if (productExperienceAvailability.favorites === false) return getLocalProductFavorites();
+  try {
+    const { data, error } = await supabaseClient
+      .from('product_favorites')
+      .select('codigo')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    productExperienceAvailability.favorites = true;
+    return (data || []).map((row) => row.codigo).filter(Boolean);
+  } catch (error) {
+    if (isMissingSupabaseResource(error)) {
+      markProductExperienceUnavailable('favorites');
+      return getLocalProductFavorites();
+    }
+    throw error;
+  }
+}
+
+async function supabaseToggleProductFavorite(codigo, enabled) {
+  const code = String(codigo || '').trim();
+  if (!code) return supabaseListProductFavorites();
+  if (productExperienceAvailability.favorites === false) {
+    return setLocalProductFavorite(code, enabled);
+  }
+  try {
+    if (enabled) {
+      const { error } = await supabaseClient
+        .from('product_favorites')
+        .insert({ user_id: getSessionId(), codigo: code });
+      if (error && error.code !== '23505') throw error;
+    } else {
+      const { error } = await supabaseClient
+        .from('product_favorites')
+        .delete()
+        .eq('codigo', code)
+        .eq('user_id', getSessionId());
+      if (error) throw error;
+    }
+    productExperienceAvailability.favorites = true;
+    return supabaseListProductFavorites();
+  } catch (error) {
+    if (isMissingSupabaseResource(error)) {
+      markProductExperienceUnavailable('favorites');
+      return setLocalProductFavorite(code, enabled);
+    }
+    throw error;
+  }
+}
+
+async function supabaseRegisterProductView(codigo) {
+  const code = String(codigo || '').trim();
+  if (!code) return;
+  pushLocalProductRecent(code);
+  if (productExperienceAvailability.recent === false) return;
+  try {
+    const { error } = await supabaseClient.rpc('record_product_recent_view', {
+      product_code: code,
+      max_items: 30
+    });
+    if (error) throw error;
+    productExperienceAvailability.recent = true;
+  } catch (error) {
+    if (isMissingSupabaseResource(error)) {
+      markProductExperienceUnavailable('recent');
+      return;
+    }
+    throw error;
+  }
+}
+
+async function supabaseListRecentProducts(limitCount = 6) {
+  if (productExperienceAvailability.recent === false) return supabaseProductsByCodes(getLocalProductRecent().slice(0, limitCount));
+  try {
+    const { data, error } = await supabaseClient
+      .from('product_recent_views')
+      .select('codigo, viewed_at, view_count, products(codigo, descricao, marca, aplicacao, montadora, oem, similar, url_imagem, estoque, estoque_quantidade, preco_sp, preco_pr)')
+      .order('viewed_at', { ascending: false })
+      .limit(Math.min(Math.max(Number(limitCount || 6), 1), 30));
+    if (error) throw error;
+    productExperienceAvailability.recent = true;
+    return (data || []).map((row) => Object.assign({}, row.products || {}, {
+      viewed_at: row.viewed_at,
+      view_count: row.view_count
+    })).filter((product) => product.codigo);
+  } catch (error) {
+    if (isMissingSupabaseResource(error)) {
+      markProductExperienceUnavailable('recent');
+      return supabaseProductsByCodes(getLocalProductRecent().slice(0, limitCount));
+    }
+    throw error;
+  }
+}
+
+async function supabaseProductsByCodes(codes) {
+  const cleanCodes = Array.from(new Set((codes || []).map((code) => String(code || '').trim()).filter(Boolean)));
+  if (!cleanCodes.length) return [];
+  const { data, error } = await supabaseClient
+    .from('products')
+    .select('codigo, descricao, marca, aplicacao, montadora, oem, similar, url_imagem, estoque, estoque_quantidade, preco_sp, preco_pr')
+    .in('codigo', cleanCodes);
+  if (error) return [];
+  const byCode = new Map((data || []).map((product) => [product.codigo, product]));
+  return cleanCodes.map((code) => byCode.get(code)).filter(Boolean);
+}
+
+async function supabaseGetProductHistory(codigo) {
+  const empty = { prices: [], stock: [] };
+  if (productExperienceAvailability.history === false) return empty;
+  try {
+    const [pricesResult, stockResult] = await Promise.all([
+      supabaseClient.rpc('get_product_price_history', { product_code: codigo, limit_count: 12 }),
+      supabaseClient.rpc('get_product_stock_history', { product_code: codigo, limit_count: 12 })
+    ]);
+    if (pricesResult.error) throw pricesResult.error;
+    if (stockResult.error) throw stockResult.error;
+    productExperienceAvailability.history = true;
+    return {
+      prices: Array.isArray(pricesResult.data) ? pricesResult.data : [],
+      stock: Array.isArray(stockResult.data) ? stockResult.data : []
+    };
+  } catch (error) {
+    if (isMissingSupabaseResource(error)) {
+      markProductExperienceUnavailable('history');
+      return empty;
+    }
+    throw error;
+  }
+}
+
+async function supabaseGetTopSellingProducts(limitCount = 6) {
+  if (productExperienceAvailability.topSelling === false) return [];
+  try {
+    const { data, error } = await supabaseClient.rpc('get_top_selling_products', {
+      limit_count: Math.min(Math.max(Number(limitCount || 6), 1), 20)
+    });
+    if (error) throw error;
+    productExperienceAvailability.topSelling = true;
+    return data || [];
+  } catch (error) {
+    if (isMissingSupabaseResource(error)) {
+      markProductExperienceUnavailable('topSelling');
+      return [];
+    }
+    throw error;
+  }
+}
+
+function isMissingSupabaseResource(error) {
+  const message = String(error?.message || error?.details || '');
+  return error?.status === 404
+    || error?.code === 'PGRST202'
+    || error?.code === 'PGRST205'
+    || message.toLowerCase().includes('could not find')
+    || message.toLowerCase().includes('schema cache');
+}
+
+function markProductExperienceUnavailable(feature) {
+  productExperienceAvailability[feature] = false;
+  if (productExperienceAvailability.warned.has(feature)) return;
+  productExperienceAvailability.warned.add(feature);
+  console.info('Modulo Produtos: recurso complementar indisponivel ate aplicar a migration 024:', feature);
+}
+
+function getLocalProductFavorites() {
+  try {
+    return JSON.parse(localStorage.getItem(localProductKey('favorites')) || '[]');
+  } catch (error) {
+    return [];
+  }
+}
+
+function setLocalProductFavorite(codigo, enabled) {
+  const favorites = new Set(getLocalProductFavorites());
+  if (enabled) favorites.add(codigo);
+  else favorites.delete(codigo);
+  const next = Array.from(favorites).slice(0, 200);
+  localStorage.setItem(localProductKey('favorites'), JSON.stringify(next));
+  return next;
+}
+
+function getLocalProductRecent() {
+  try {
+    return JSON.parse(localStorage.getItem(localProductKey('recent')) || '[]');
+  } catch (error) {
+    return [];
+  }
+}
+
+function pushLocalProductRecent(codigo) {
+  const next = [codigo].concat(getLocalProductRecent().filter((code) => code !== codigo)).slice(0, 30);
+  localStorage.setItem(localProductKey('recent'), JSON.stringify(next));
+}
+
+function localProductKey(type) {
+  return 'crmProductExperience:' + type + ':' + (getSessionId() || 'anon');
 }
 
 function uniqueSorted(values) {
@@ -278,6 +522,14 @@ function setStaticCache(key, value) {
       createdAt: Date.now(),
       value
     }));
+  } catch (error) {
+    console.warn(error);
+  }
+}
+
+function clearStaticCache(key) {
+  try {
+    localStorage.removeItem('crmStaticCache:' + key);
   } catch (error) {
     console.warn(error);
   }
@@ -772,6 +1024,7 @@ async function supabaseImportProducts(payload) {
   }
   const { data, error } = await supabaseClient.rpc('commit_products_import_batch', { batch_id: batchId });
   if (error) throw formatImportRpcError(error);
+  clearStaticCache('productFiltersV2');
   if (typeof payload.onProgress === 'function') {
     payload.onProgress({ done: 1, total: 1, batch: 1, batches: 1 });
   }
