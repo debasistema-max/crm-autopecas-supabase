@@ -36,27 +36,66 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const message = document.getElementById('loginMessage');
   const button = document.getElementById('loginButton');
+  const buttonLabel = document.getElementById('loginButtonLabel');
+  const password = document.getElementById('senha');
+  const passwordToggle = document.getElementById('passwordToggle');
+  let submitting = false;
+
+  function setPasswordVisible(visible) {
+    password.type = visible ? 'text' : 'password';
+    passwordToggle.textContent = visible ? 'Ocultar' : 'Mostrar';
+    passwordToggle.setAttribute('aria-label', visible ? 'Ocultar senha' : 'Mostrar senha');
+    passwordToggle.setAttribute('aria-pressed', String(visible));
+  }
+
+  function setLoading(loading) {
+    button.disabled = loading;
+    button.setAttribute('aria-busy', String(loading));
+    buttonLabel.textContent = loading ? 'Entrando...' : 'Entrar';
+    form.setAttribute('aria-busy', String(loading));
+  }
+
+  passwordToggle.addEventListener('click', () => {
+    setPasswordVisible(password.type === 'password');
+    password.focus();
+  });
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (submitting) return;
+    submitting = true;
     message.textContent = '';
-    button.disabled = true;
-    button.textContent = 'Entrando...';
+    message.classList.remove('is-success');
+    setPasswordVisible(false);
+    setLoading(true);
+    let succeeded = false;
     try {
       const usuario = document.getElementById('usuario').value;
-      const senha = document.getElementById('senha').value;
+      const senha = password.value;
       const data = await supabaseLogin(usuario, senha);
       const session = Object.assign({}, data.session || {}, {
         sessionId: data.sessionId || data.token || (data.session && data.session.token),
         modules: data.modules || []
       });
       setStoredSession(session);
+      succeeded = true;
+      message.classList.add('is-success');
+      message.textContent = 'Acesso autorizado. Abrindo o sistema...';
+      buttonLabel.textContent = 'Acesso autorizado';
       window.location.href = 'app.html';
     } catch (error) {
-      message.textContent = error.message;
+      password.value = '';
+      message.textContent = 'Usuario ou senha invalidos.';
+      message.focus();
     } finally {
-      button.disabled = false;
-      button.textContent = 'Entrar';
+      if (!succeeded) {
+        submitting = false;
+        setLoading(false);
+      }
     }
+  });
+
+  window.addEventListener('pageshow', () => {
+    setPasswordVisible(false);
   });
 });
