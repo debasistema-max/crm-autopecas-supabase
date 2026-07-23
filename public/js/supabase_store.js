@@ -87,12 +87,35 @@ async function supabaseGetDashboard() {
   return data || {};
 }
 
+let commercialDashboardV2CAvailability = null;
+
 async function supabaseGetCommercialDashboardSummary(filters = {}) {
+  const normalizedFilters = normalizeCommercialDashboardFilters(filters);
+
+  if (commercialDashboardV2CAvailability !== false) {
+    const { data, error } = await supabaseClient.rpc('get_dashboard_summary', {
+      filters: normalizedFilters
+    });
+
+    if (!error) {
+      commercialDashboardV2CAvailability = true;
+      return data || {};
+    }
+
+    if (!isMissingCommercialDashboardRpc(error)) {
+      throw formatCommercialDashboardError(error);
+    }
+
+    commercialDashboardV2CAvailability = false;
+  }
+
   const { data, error } = await supabaseClient.rpc('get_commercial_dashboard_summary', {
-    filters: normalizeCommercialDashboardFilters(filters)
+    filters: normalizedFilters
   });
   if (error) throw formatCommercialDashboardError(error);
-  return data || {};
+  return Object.assign({}, data || {}, {
+    meta: { fallback: true, version: '2.1' }
+  });
 }
 
 function normalizeCommercialDashboardFilters(filters = {}) {
@@ -104,6 +127,12 @@ function normalizeCommercialDashboardFilters(filters = {}) {
   };
 }
 
+function isMissingCommercialDashboardRpc(error) {
+  const message = String(error?.message || '').toLowerCase();
+  return error?.code === 'PGRST202'
+    || (message.includes('get_dashboard_summary') && message.includes('could not find'));
+}
+
 function formatCommercialDashboardError(error) {
   const message = String(error?.message || '');
   console.error('Erro no Dashboard Comercial:', {
@@ -113,7 +142,7 @@ function formatCommercialDashboardError(error) {
     hint: error?.hint
   });
   if (message.toLowerCase().includes('could not find the function')) {
-    return new Error('Dashboard Comercial ainda nao esta ativo no Supabase. Rode a migration 022 para habilitar os novos indicadores.');
+    return new Error('O resumo do Dashboard Comercial nao esta disponivel no Supabase.');
   }
   if (message.includes('SEM_PERMISSAO')) {
     return new Error('Voce nao tem permissao para carregar o Dashboard Comercial.');
@@ -132,6 +161,12 @@ function formatCommercialDashboardError(error) {
   }
   if (message.includes('VENDEDOR_INVALIDO')) {
     return new Error('Vendedor invalido para o filtro informado.');
+  }
+  if (message.includes('FILTROS_INVALIDOS')) {
+    return new Error('Os filtros informados para o dashboard sao invalidos.');
+  }
+  if (message.includes('FILTRO_VENDEDOR_NAO_PERMITIDO')) {
+    return new Error('Seu perfil nao pode consultar indicadores de outro usuario.');
   }
   return new Error('Nao foi possivel carregar o Dashboard Comercial.');
 }

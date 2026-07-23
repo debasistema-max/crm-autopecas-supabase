@@ -191,9 +191,36 @@
   align-items: flex-start;
 }
 
+.dashboard-periods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.dashboard-period-button {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.dashboard-period-button:hover,
+.dashboard-period-button.is-active {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+}
+
 .dashboard-filters {
   display: grid;
-  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
   gap: 12px;
 }
 
@@ -205,9 +232,13 @@
   font-weight: 800;
 }
 
+.dashboard-filters label[hidden] {
+  display: none;
+}
+
 .dashboard-filters input,
 .dashboard-filters select {
-  min-height: 38px;
+  min-height: 42px;
 }
 
 .dashboard-grid {
@@ -259,6 +290,170 @@
 .activity-item span {
   color: var(--muted);
   font-size: 13px;
+}
+
+.dashboard-notice {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-left: 4px solid #b7791f;
+  background: #fff8e6;
+  color: #664d03;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.dashboard-kpis {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.dashboard-secondary-metrics,
+.dashboard-admin-metrics,
+.dashboard-abc-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 12px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--line);
+}
+
+.dashboard-secondary-metrics > div,
+.dashboard-admin-metrics > div,
+.dashboard-abc-grid > div {
+  min-width: 0;
+  padding: 12px;
+  background: var(--surface);
+}
+
+.dashboard-secondary-metrics span,
+.dashboard-admin-metrics span,
+.dashboard-abc-grid span,
+.dashboard-abc-grid small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.dashboard-secondary-metrics strong,
+.dashboard-admin-metrics strong,
+.dashboard-abc-grid strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 19px;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-chart-panel,
+.dashboard-abc-panel,
+.dashboard-admin-panel {
+  margin-top: 16px;
+}
+
+.dashboard-chart {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(8px, 1fr);
+  align-items: end;
+  min-height: 220px;
+  gap: 4px;
+  padding: 30px 4px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.dashboard-chart-column {
+  display: grid;
+  grid-template-rows: 18px 160px 24px;
+  align-items: end;
+  min-width: 0;
+  text-align: center;
+}
+
+.dashboard-chart-column i {
+  display: block;
+  width: min(100%, 28px);
+  min-height: 3px;
+  margin: 0 auto;
+  border-radius: 3px 3px 0 0;
+  background: var(--primary);
+}
+
+.dashboard-chart-value,
+.dashboard-chart-column small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-rankings {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.dashboard-ranking-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: dashboard-rank;
+}
+
+.dashboard-ranking-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+  counter-increment: dashboard-rank;
+}
+
+.dashboard-ranking-list li:last-child {
+  border-bottom: 0;
+}
+
+.dashboard-ranking-list span {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-ranking-list span::before {
+  content: counter(dashboard-rank) ". ";
+  color: var(--muted);
+}
+
+.dashboard-ranking-list strong {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  align-self: center;
+}
+
+.dashboard-ranking-list small {
+  color: var(--muted);
+}
+
+.dashboard-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.dashboard-error-state {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
 }
 
 .table-wrap {
@@ -1554,6 +1749,11 @@ button:disabled {
   .dashboard-report-grid { grid-template-columns: 1fr; }
   .dashboard-grid { grid-template-columns: 1fr; }
   .dashboard-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dashboard-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dashboard-rankings { grid-template-columns: 1fr; }
+  .dashboard-secondary-metrics,
+  .dashboard-admin-metrics,
+  .dashboard-abc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .import-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .import-format { grid-template-columns: 1fr; }
   .mapping-grid { grid-template-columns: 1fr; }
@@ -1628,6 +1828,54 @@ button:disabled {
   }
   .dashboard-filters {
     grid-template-columns: 1fr;
+  }
+  .dashboard-periods {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .dashboard-period-button {
+    min-width: 0;
+    min-height: 44px;
+  }
+  .dashboard-kpis,
+  .dashboard-secondary-metrics,
+  .dashboard-admin-metrics,
+  .dashboard-abc-grid {
+    grid-template-columns: 1fr;
+  }
+  .dashboard-chart {
+    min-height: 190px;
+    gap: 2px;
+    padding-inline: 0;
+  }
+  .dashboard-chart-column {
+    grid-template-rows: 16px 130px 22px;
+  }
+  .dashboard-chart-value {
+    display: none;
+  }
+  .dashboard-chart-column small {
+    visibility: hidden;
+  }
+  .dashboard-chart-column:first-child small,
+  .dashboard-chart-column:last-child small {
+    width: max-content;
+    overflow: visible;
+    visibility: visible;
+    text-overflow: clip;
+  }
+  .dashboard-chart-column:first-child small {
+    justify-self: start;
+  }
+  .dashboard-chart-column:last-child small {
+    justify-self: end;
+  }
+  .dashboard-grid .compact-table table {
+    min-width: 0;
+    table-layout: fixed;
+  }
+  .dashboard-shortcuts {
+    display: grid;
   }
   .dashboard-detail-list {
     grid-template-columns: 1fr;
