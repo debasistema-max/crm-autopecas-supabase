@@ -101,9 +101,14 @@ Por requisito, nao foram alterados fluxos ou regras de:
 
 Textos tecnicos de planilhas/importacao que mencionam `CODIGO IPS` nao foram alterados nesta etapa porque fazem parte do fluxo de Importacao SAP, explicitamente fora do escopo.
 
-## Aplicacao
+## Historico da implantacao inicial - conteudo ja executado
 
-Ordem sugerida quando for autorizado aplicar:
+As instrucoes abaixo descrevem o plano original e nao devem ser executadas
+novamente.
+
+### Plano original
+
+A ordem planejada antes da implantacao foi:
 
 1. Confirmar backup recente.
 2. Aplicar `supabase/migrations/023_company_settings.sql`.
@@ -128,17 +133,32 @@ O rollback remove:
 
 Nao altera dados de Produtos, Pedidos, Cotacoes, Dashboard ou Importacao SAP.
 
-## Estado desta entrega
+### Estado registrado na entrega original
 
 - Backup criado.
 - Migration criada.
 - Rollback criado.
 - Documentacao criada.
 - Frontend preparado localmente.
-- Migration nao aplicada no Supabase remoto.
-- Deploy nao executado.
-- Migration corretiva `027_company_settings_hardening.sql` preparada porque o status remoto da `023` nao pode ser confirmado sem token da CLI Supabase.
-- O pedido original citava `024_company_settings_hardening.sql`; como `024`, `025` e `026` ja existem no repositório, foi criada a proxima migration livre, `027_company_settings_hardening.sql`, para preservar a sequencia.
+- Naquele registro inicial, a aplicacao remota e o deploy ainda estavam
+  pendentes. O estado remoto atual abaixo substitui essa informacao historica.
+
+## Estado remoto atual
+
+- A migration `023_company_settings` ja esta aplicada.
+- Os objetos de hardening foram confirmados no schema remoto.
+- O hardening de `company_settings` foi incorporado a migration `023_company_settings.sql`.
+- A auditoria de 2026-07-28 confirmou constraints, trigger, RLS, policies, grants e RPC no schema remoto.
+- O antigo arquivo local de hardening nao constitui uma nova migration.
+- O conteudo foi absorvido pela migration 023 antes da publicacao.
+- Os arquivos antigos permanecem somente como referencia historica em
+  `supabase/archive/absorbed/`.
+- Nao existe migration ativa adicional para esse hardening.
+- Nao criar migration 028 para reaplicar esse conteudo.
+- Nao usar `migration repair`.
+- Nao executar novamente o SQL arquivado.
+- Os arquivos arquivados nao devem ser renumerados, aplicados ou usados como
+  migration futura.
 
 ## Auditoria da Fase 1 - 2026-07-20
 
@@ -212,10 +232,10 @@ O rollback remove a permissao `ADMIN/configuracoes_empresa`, policies, trigger e
 
 ### Limitacoes e pendencias encontradas
 
-- A migration `023` foi endurecida localmente, mas se ela ja tiver sido aplicada no remoto, deve-se aplicar a corretiva `027`.
+- A migration remota `023` ja contem o hardening auditado; nenhuma migration corretiva permanece pendente.
 - `cnpj` permanece sem constraint de tamanho/validacao no banco para evitar bloquear cadastros legados; a normalizacao continua no frontend.
-- `email` e `website` permanecem com validacao de frontend; a `027` nao muda dados comerciais.
-- A migration historica `007_portal_cadastros_settings.sql` ainda contem o e-mail antigo como historico de migration. A `027` neutraliza o valor gravado em `settings` se ele ainda estiver igual ao antigo.
+- `email` e `website` permanecem com validacao de frontend.
+- A migration historica `007_portal_cadastros_settings.sql` ainda contem o e-mail antigo apenas em seu SQL historico. A auditoria confirmou que esse valor nao esta ativo em `settings`.
 - `CODIGO IPS` permanece em textos tecnicos da Importacao SAP por compatibilidade com planilhas existentes.
 
 ### Correcao das pendencias da auditoria - 2026-07-20
