@@ -101,9 +101,14 @@ Por requisito, nao foram alterados fluxos ou regras de:
 
 Textos tecnicos de planilhas/importacao que mencionam `CODIGO IPS` nao foram alterados nesta etapa porque fazem parte do fluxo de Importacao SAP, explicitamente fora do escopo.
 
-## Aplicacao
+## Historico da implantacao inicial - conteudo ja executado
 
-Ordem sugerida quando for autorizado aplicar:
+As instrucoes abaixo descrevem o plano original e nao devem ser executadas
+novamente.
+
+### Plano original
+
+A ordem planejada antes da implantacao foi:
 
 1. Confirmar backup recente.
 2. Aplicar `supabase/migrations/023_company_settings.sql`.
@@ -128,19 +133,32 @@ O rollback remove:
 
 Nao altera dados de Produtos, Pedidos, Cotacoes, Dashboard ou Importacao SAP.
 
-## Estado desta entrega
+### Estado registrado na entrega original
 
 - Backup criado.
 - Migration criada.
 - Rollback criado.
 - Documentacao criada.
 - Frontend preparado localmente.
-- Migration nao aplicada no Supabase remoto.
-- Deploy nao executado.
+- Naquele registro inicial, a aplicacao remota e o deploy ainda estavam
+  pendentes. O estado remoto atual abaixo substitui essa informacao historica.
+
+## Estado remoto atual
+
+- A migration `023_company_settings` ja esta aplicada.
+- Os objetos de hardening foram confirmados no schema remoto.
 - O hardening de `company_settings` foi incorporado a migration `023_company_settings.sql`.
 - A auditoria de 2026-07-28 confirmou constraints, trigger, RLS, policies, grants e RPC no schema remoto.
-- A antiga corretiva foi arquivada em `supabase/archive/absorbed/023_company_settings_hardening_reference.sql` somente como referencia historica.
-- O arquivo arquivado nao deve ser renumerado, aplicado ou usado como migration futura.
+- O antigo arquivo local de hardening nao constitui uma nova migration.
+- O conteudo foi absorvido pela migration 023 antes da publicacao.
+- Os arquivos antigos permanecem somente como referencia historica em
+  `supabase/archive/absorbed/`.
+- Nao existe migration ativa adicional para esse hardening.
+- Nao criar migration 028 para reaplicar esse conteudo.
+- Nao usar `migration repair`.
+- Nao executar novamente o SQL arquivado.
+- Os arquivos arquivados nao devem ser renumerados, aplicados ou usados como
+  migration futura.
 
 ## Auditoria da Fase 1 - 2026-07-20
 

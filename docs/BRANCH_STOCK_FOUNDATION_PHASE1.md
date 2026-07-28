@@ -149,17 +149,59 @@ Quando permitido, ele remove o trigger de compatibilidade, helpers, policies,
 tabelas e indices da fundacao. `products.estoque_quantidade`, pedidos,
 importacao, usuarios e demais dados atuais permanecem intactos.
 
-## Aplicacao futura
+## Estado atual em producao
 
-Antes de aplicar remotamente:
+A migration foi aplicada e validada em producao em 28/07/2026.
 
-1. confirmar a numeracao 027 no historico remoto;
-2. criar e validar backup;
-3. verificar ausencia de estoque negativo;
-4. executar a migration em transacao;
-5. comparar a soma de PR com `products.estoque_quantidade`;
-6. testar uma importacao legada descartavel e seu movimento;
-7. confirmar RLS e grants;
-8. remover integralmente os dados de teste.
+- inicio: `15:00:20.407 -03:00`;
+- fim: `15:00:50.204 -03:00`;
+- projeto: `doenvnjzrecrtvwooaai`;
+- ambiente: `main / Production`;
+- versao: `027`;
+- nome: `branch_stock_foundation`;
+- commit: `a868c939335cd50d08ffa67c2a29b804b66912f1`;
+- SHA-256 da migration:
+  `121F22532B9971F9AD831CD03A3AF50D29113719C66FDD7FB732CCC5738ABB2B`;
+- SHA-256 do rollback:
+  `E305E9906828793DB7CC78B3F77B936A650DA234A2F6A438938B54E65BA917FF`.
 
-Esta fase nao aplica migration remotamente e nao faz push ou deploy.
+### Resultados validados
+
+- filiais: `2`;
+- matrizes: `1`;
+- produtos por filial: `4.035`;
+- total de linhas de saldo: `8.070`;
+- estoque legado: `104.587`;
+- estoque fisico PR: `104.587`;
+- estoque fisico SP: `0`;
+- movimentos iniciais: `2.922`;
+- soma dos deltas: `104.587`;
+- inconsistencias: `0`;
+- reservas: `0`;
+- tabelas com RLS: `4`;
+- policies: `9`;
+- teste transacional executado e revertido com sucesso.
+
+### Aviso da Supabase CLI
+
+Apos a aplicacao, a CLI apresentou o aviso:
+
+```text
+Warning: failed to cache migrations catalog:
+Failed to read certificate file
+'/workspace/supabase/.temp/pgdelta/pgdelta-target-ca.crt'
+```
+
+O aviso afetou somente o cache local do catalogo. O comando terminou com exit
+code `0`, e o banco confirmou a migration e todos os objetos esperados. O
+comando nao foi repetido.
+
+### Alerta operacional
+
+> A migration 027 ja esta aplicada em producao.
+>
+> Nao executar novamente.
+> Nao usar `migration repair`.
+> Nao usar `--include-all`.
+> Nao reaplicar manualmente pelo Dashboard.
+> Nao repetir `db push` para tentar eliminar o aviso de cache.
