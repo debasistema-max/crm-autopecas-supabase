@@ -137,8 +137,10 @@ Nao altera dados de Produtos, Pedidos, Cotacoes, Dashboard ou Importacao SAP.
 - Frontend preparado localmente.
 - Migration nao aplicada no Supabase remoto.
 - Deploy nao executado.
-- Migration corretiva `027_company_settings_hardening.sql` preparada porque o status remoto da `023` nao pode ser confirmado sem token da CLI Supabase.
-- O pedido original citava `024_company_settings_hardening.sql`; como `024`, `025` e `026` ja existem no repositório, foi criada a proxima migration livre, `027_company_settings_hardening.sql`, para preservar a sequencia.
+- O hardening de `company_settings` foi incorporado a migration `023_company_settings.sql`.
+- A auditoria de 2026-07-28 confirmou constraints, trigger, RLS, policies, grants e RPC no schema remoto.
+- A antiga corretiva foi arquivada em `supabase/archive/absorbed/023_company_settings_hardening_reference.sql` somente como referencia historica.
+- O arquivo arquivado nao deve ser renumerado, aplicado ou usado como migration futura.
 
 ## Auditoria da Fase 1 - 2026-07-20
 
@@ -212,10 +214,10 @@ O rollback remove a permissao `ADMIN/configuracoes_empresa`, policies, trigger e
 
 ### Limitacoes e pendencias encontradas
 
-- A migration `023` foi endurecida localmente, mas se ela ja tiver sido aplicada no remoto, deve-se aplicar a corretiva `027`.
+- A migration remota `023` ja contem o hardening auditado; nenhuma migration corretiva permanece pendente.
 - `cnpj` permanece sem constraint de tamanho/validacao no banco para evitar bloquear cadastros legados; a normalizacao continua no frontend.
-- `email` e `website` permanecem com validacao de frontend; a `027` nao muda dados comerciais.
-- A migration historica `007_portal_cadastros_settings.sql` ainda contem o e-mail antigo como historico de migration. A `027` neutraliza o valor gravado em `settings` se ele ainda estiver igual ao antigo.
+- `email` e `website` permanecem com validacao de frontend.
+- A migration historica `007_portal_cadastros_settings.sql` ainda contem o e-mail antigo apenas em seu SQL historico. A auditoria confirmou que esse valor nao esta ativo em `settings`.
 - `CODIGO IPS` permanece em textos tecnicos da Importacao SAP por compatibilidade com planilhas existentes.
 
 ### Correcao das pendencias da auditoria - 2026-07-20
