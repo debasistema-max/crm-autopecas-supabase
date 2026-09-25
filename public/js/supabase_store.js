@@ -118,6 +118,12 @@ async function supabaseGetCommercialDashboardSummary(filters = {}) {
   });
 }
 
+async function supabaseGetDashboardTransferSummary() {
+  const { data, error } = await supabaseClient.rpc('get_dashboard_transfer_summary');
+  if (error) throw error;
+  return data || {};
+}
+
 function normalizeCommercialDashboardFilters(filters = {}) {
   return {
     date_from: filters.dateFrom || filters.date_from || '',
@@ -227,32 +233,133 @@ function formatImportBatchReportError(error) {
 }
 
 async function supabaseSearchProducts(params) {
-  if (
-    params.context === 'produtos'
-    || params.listaGeral
-    || params.grupo
-    || params.linha
-    || params.marca
-    || params.montadora
-    || params.disponibilidade
-    || params.comFoto
-    || params.semFoto
-    || params.favoritos
-  ) {
-    return supabaseListProducts(params);
-  }
-  const { data, error } = await supabaseClient.rpc('search_products', {
-    term: params.termo || params.q || '',
-    region: params.regiao || 'SP',
-    only_available: params.disponiveis === true,
-    limit_count: Number(params.limite || 40)
+  const favoriteCodes = params.favoritos === true
+    ? await supabaseListProductFavorites()
+    : [];
+  if (params.favoritos === true && !favoriteCodes.length) return [];
+
+  const { data, error } = await supabaseClient.rpc('search_products_v2', {
+    filters: {
+      term: params.termo || params.q || '',
+      region: params.regiao || 'SP',
+      line: params.linha || '',
+      group: params.grupo || '',
+      maker: params.montadora || '',
+      brand: params.marca || '',
+      only_available: params.disponiveis === true || params.disponibilidade === 'disponivel',
+      with_oem: params.comOem === true,
+      with_photo: params.comFoto === true,
+      favorite_codes: favoriteCodes,
+      limit: Number(params.limite || 60)
+    }
   });
   if (error) throw error;
-  return data || [];
+  return Array.isArray(data) ? data : [];
+}
+
+async function enrichProductsWithBranchAvailability(products, region = 'SP') {
+  const rows = Array.isArray(products) ? products : [];
+  const codes = Array.from(new Set(rows.map((product) => String(product.codigo || '').trim()).filter(Boolean)));
+  if (!codes.length) return rows;
+  try {
+    const { data, error } = await supabaseClient.rpc('get_branch_product_availability_v2', {
+      product_codes: codes
+    });
+    if (error) throw error;
+    const byCode = new Map((data || []).map((row) => [row.product_code, row]));
+    const branch = String(region || 'SP').trim().toUpperCase() === 'PR' ? 'pr' : 'sp';
+    return rows.map((product) => {
+      const values = byCode.get(product.codigo) || null;
+      if (!values) return Object.assign({}, product, { branch_stock: null });
+      const quantity = values[`${branch}_available_qty`];
+      const display = values[`${branch}_source_display_value`];
+      const price = values[`${branch}_price`];
+      return Object.assign({}, product, {
+        branch_stock: values,
+        estoque: display || (quantity == null ? '' : formatQuantity(quantity)),
+        estoque_quantidade: quantity == null ? null : Number(quantity),
+        preco_sp: values.sp_price == null ? product.preco_sp : Number(values.sp_price),
+        preco_pr: values.pr_price == null ? product.preco_pr : Number(values.pr_price),
+        preco: price == null ? null : Number(price)
+      });
+    });
+  } catch (error) {
+    if (!isMissingSupabaseResource(error)) console.info('Disponibilidade por filial indisponivel:', error.message || error);
+    return rows;
+  }
+}
+
+function branchQuantityOrNull(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function getBranchTransferNotice(product, region, requestedQty = 1) {
+  if (String(region || '').trim().toUpperCase() !== 'SP') return null;
+  const stock = product && product.branch_stock;
+  const sp = branchQuantityOrNull(stock && stock.sp_transfer_available_qty);
+  const pr = branchQuantityOrNull(stock && stock.pr_transfer_available_qty);
+  const requested = Math.max(Number(requestedQty || 0), 0);
+
+  if (sp === null) {
+    if (pr === null) {
+      return { code: 'ESTOQUE_PR_NAO_IMPORTADO', level: 'blocked', message: 'Estoque PR nao importado. A transferencia automatica nao pode ser calculada.' };
+    }
+    if (pr <= 0) {
+      return { code: 'ESTOQUE_PR_INDISPONIVEL', level: 'blocked', message: 'Sem disponibilidade na Matriz PR para atender o pedido de SP.' };
+    }
+    const transferQty = Math.min(requested, pr);
+    return {
+      code: transferQty < requested ? 'TRANSFERENCIA_PARCIAL' : 'TRANSFERENCIA_PR_SP',
+      level: transferQty < requested ? 'partial' : 'transfer',
+      transferQty,
+      message: 'Transferencia PR -> SP de ' + formatQuantity(transferQty) + ' unidade(s) sera solicitada ao salvar o pedido.'
+        + (transferQty < requested ? ' O saldo PR atende apenas parte do pedido.' : '')
+    };
+  }
+  const shortage = Math.max(requested - sp, 0);
+  if (shortage <= 0) return null;
+  if (pr === null) {
+    return { code: 'ESTOQUE_PR_NAO_IMPORTADO', level: 'blocked', message: 'Saldo SP insuficiente e estoque PR nao importado. Verifique antes de salvar.' };
+  }
+  if (pr <= 0) {
+    return { code: 'ESTOQUE_PR_INDISPONIVEL', level: 'blocked', message: 'Saldo SP insuficiente e sem disponibilidade na Matriz PR.' };
+  }
+  const transferQty = Math.min(shortage, pr);
+  return {
+    code: transferQty < shortage ? 'TRANSFERENCIA_PARCIAL' : 'TRANSFERENCIA_PR_SP',
+    level: transferQty < shortage ? 'partial' : 'transfer',
+    transferQty,
+    message: 'Transferencia PR -> SP de ' + formatQuantity(transferQty) + ' unidade(s) sera solicitada ao salvar o pedido.'
+      + (transferQty < shortage ? ' O saldo PR atende apenas parte da falta.' : '')
+  };
+}
+
+function formatBranchAvailability(product, region, requestedQty = 1) {
+  const stock = product && product.branch_stock;
+  if (!stock) return 'Estoque das filiais nao importado.';
+  const notice = getBranchTransferNotice(product, region, requestedQty);
+  if (notice) return notice.message;
+  if (String(region || '').trim().toUpperCase() === 'SP') {
+    const spTransfer = branchQuantityOrNull(stock.sp_transfer_available_qty);
+    const prTransfer = branchQuantityOrNull(stock.pr_transfer_available_qty);
+    return 'SP transferivel: ' + (spTransfer === null ? 'nao importado' : formatQuantity(spTransfer))
+      + ' / PR transferivel: ' + (prTransfer === null ? 'nao importado' : formatQuantity(prTransfer));
+  }
+  const sp = branchQuantityOrNull(stock.sp_available_qty);
+  const pr = branchQuantityOrNull(stock.pr_available_qty);
+  return 'SP: ' + (sp === null ? 'nao importado' : formatQuantity(sp))
+    + ' / PR: ' + (pr === null ? 'nao importado' : formatQuantity(pr));
+}
+
+function formatQuantity(value) {
+  const number = Number(value || 0);
+  return Number.isInteger(number) ? String(number) : number.toLocaleString('pt-BR', { maximumFractionDigits: 3 });
 }
 
 async function supabaseListProductFilters() {
-  const cached = getStaticCache('productFiltersV2', 10 * 60 * 1000);
+  const cached = getStaticCache('productFiltersV3', 10 * 60 * 1000);
   if (cached && cached.marcas && cached.montadoras) return cached;
   const { data, error } = await supabaseClient.rpc('get_product_filters');
   if (error) throw error;
@@ -267,17 +374,17 @@ async function supabaseListProductFilters() {
       filters.montadoras = uniqueSorted((products || []).map((product) => product.montadora));
     }
   }
-  setStaticCache('productFiltersV2', filters);
+  setStaticCache('productFiltersV3', filters);
   return filters;
 }
 
 async function supabaseListProducts(params = {}) {
-  const region = params.regiao || 'SP';
+  const region = getBillingRegionForUf(params.uf || params.estado, params.regiao || 'PR');
   const limit = Math.min(Math.max(Number(params.limite || params.pageSize || 60), 1), 200);
   const offset = Math.max(Number(params.offset || 0), 0);
   let query = supabaseClient
     .from('products')
-    .select('codigo, descricao, marca, aplicacao, ano, estoque, estoque_quantidade, preco_sp, preco_pr, status_estoque, status_cadastro, url_imagem, grupo, categoria, montadora, detalhes, oem, similar')
+    .select('codigo, descricao, marca, aplicacao, ano, ncm, cest, ipi, ipi_rate, ipi_defined, origin_code, origin_description, material_group, fiscal_group, preco_sem_imposto, estoque, estoque_quantidade, preco_sp, preco_pr, status_estoque, status_cadastro, url_imagem, grupo, categoria, montadora, detalhes, oem, similar')
     .order('codigo', { ascending: true })
     .range(offset, offset + limit - 1);
 
@@ -318,10 +425,27 @@ async function supabaseListProducts(params = {}) {
 
   const { data, error } = await query;
   if (error) throw error;
-  return (data || []).map((product) => Object.assign({}, product, {
+  const rows = (data || []).map((product) => Object.assign({}, product, {
     linha: product.categoria,
     preco: region === 'PR' ? product.preco_pr : product.preco_sp
   }));
+  return enrichProductsWithBranchAvailability(rows, region);
+}
+
+function normalizeBillingUf(value) {
+  return String(value || '').trim().toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2);
+}
+
+function getBillingRegionForUf(uf, fallbackRegion = 'PR') {
+  const normalizedUf = normalizeBillingUf(uf);
+  if (normalizedUf) return normalizedUf === 'SP' ? 'SP' : 'PR';
+  return String(fallbackRegion || 'PR').toUpperCase() === 'SP' ? 'SP' : 'PR';
+}
+
+function getBillingBranchLabel(region) {
+  return String(region || '').toUpperCase() === 'SP'
+    ? '02 - FILIAL - SP'
+    : '01 - MATRIZ - PR';
 }
 
 const productExperienceAvailability = {
@@ -408,7 +532,7 @@ async function supabaseListRecentProducts(limitCount = 6) {
   try {
     const { data, error } = await supabaseClient
       .from('product_recent_views')
-      .select('codigo, viewed_at, view_count, products(codigo, descricao, marca, aplicacao, montadora, oem, similar, url_imagem, estoque, estoque_quantidade, preco_sp, preco_pr)')
+      .select('codigo, viewed_at, view_count, products(codigo, descricao, marca, aplicacao, ncm, preco_sem_imposto, montadora, oem, similar, url_imagem, estoque, estoque_quantidade, preco_sp, preco_pr)')
       .order('viewed_at', { ascending: false })
       .limit(Math.min(Math.max(Number(limitCount || 6), 1), 30));
     if (error) throw error;
@@ -431,7 +555,7 @@ async function supabaseProductsByCodes(codes) {
   if (!cleanCodes.length) return [];
   const { data, error } = await supabaseClient
     .from('products')
-    .select('codigo, descricao, marca, aplicacao, montadora, oem, similar, url_imagem, estoque, estoque_quantidade, preco_sp, preco_pr')
+    .select('codigo, descricao, marca, aplicacao, ncm, preco_sem_imposto, montadora, oem, similar, url_imagem, estoque, estoque_quantidade, preco_sp, preco_pr')
     .in('codigo', cleanCodes);
   if (error) return [];
   const byCode = new Map((data || []).map((product) => [product.codigo, product]));
@@ -609,6 +733,73 @@ async function supabaseCreateOrder(payload) {
   return (await callCommercialRpc('commercial_create_order', { payload }, 'create_order', { payload })) || {};
 }
 
+async function supabaseCreateOrderTransferRequests(orderId) {
+  if (!orderId) return { created: 0, updated: 0 };
+  return (await callCommercialRpc('create_order_transfer_requests', { target_order_id: orderId })) || { created: 0, updated: 0 };
+}
+
+async function supabaseListStockTransferRequests(filters = {}) {
+  return (await callCommercialRpc('list_stock_transfer_requests', { filters })) || [];
+}
+
+async function supabaseListOrderTransferSummaries(orderIds = []) {
+  const ids = Array.isArray(orderIds) ? orderIds.filter(Boolean) : [];
+  if (!ids.length) return [];
+  return (await callCommercialRpc('list_order_transfer_request_summaries', { target_order_ids: ids })) || [];
+}
+
+async function supabaseListOrderTransferRequests(orderId) {
+  if (!orderId) return [];
+  return (await callCommercialRpc('list_order_transfer_requests', { target_order_id: orderId })) || [];
+}
+
+async function supabaseUpdateStockTransferStatus(id, status, notes = null) {
+  if (!id) throw new Error('Solicitacao nao informada.');
+  if (!status) throw new Error('Status nao informado.');
+  return (await callCommercialRpc('update_stock_transfer_request_status', {
+    target_request_id: id,
+    target_status: status,
+    target_notes: notes
+  })) || {};
+}
+
+async function supabaseListFiscalTaxRules(filters = {}) {
+  return (await callCommercialRpc('list_fiscal_tax_rules', { filters })) || [];
+}
+
+async function supabaseSaveFiscalTaxRule(payload = {}) {
+  return (await callCommercialRpc('save_fiscal_tax_rule', { payload })) || {};
+}
+
+async function supabaseCreateFiscalTaxRuleVersion(sourceRuleId, effectiveFrom, reason) {
+  if (!sourceRuleId || !effectiveFrom || !reason) throw new Error('Informe regra, nova vigencia e motivo.');
+  return (await callCommercialRpc('create_fiscal_tax_rule_version', {
+    source_rule_id: sourceRuleId,
+    new_effective_from: effectiveFrom,
+    reason
+  })) || {};
+}
+
+async function supabaseTransitionFiscalTaxRule(id, status, reason, legalBasis = null) {
+  if (!id || !status || !reason) throw new Error('Informe regra, status e motivo.');
+  return (await callCommercialRpc('transition_fiscal_tax_rule', {
+    target_id: id,
+    target_status: status,
+    reason,
+    legal_basis_text: legalBasis || null
+  })) || {};
+}
+
+async function supabaseListFiscalTaxRuleVersions(id) {
+  if (!id) throw new Error('Regra fiscal nao informada.');
+  return (await callCommercialRpc('list_fiscal_tax_rule_versions', { target_id: id })) || [];
+}
+
+async function supabaseDeleteFiscalTaxRule(id) {
+  if (!id) throw new Error('Regra fiscal nao informada.');
+  return (await callCommercialRpc('delete_fiscal_tax_rule', { target_id: id })) || {};
+}
+
 async function supabaseCreateQuotation(payload) {
   return (await callCommercialRpc('commercial_create_quotation', { payload }, 'create_quotation', { payload })) || {};
 }
@@ -616,7 +807,7 @@ async function supabaseCreateQuotation(payload) {
 async function supabaseListOrdersReport(filters = {}) {
   let query = supabaseClient
     .from('orders')
-    .select('id, numero_pedido, data_hora, created_at, regiao, vendedor, codigo_sap_cliente, cliente, cnpj, telefone, endereco, prazo, transportadora, transportadora_cnpj, transportadora_endereco, observacao, subtotal, desconto_total, total, status, order_items(id, item, codigo, descricao, marca, aplicacao, quantidade, preco_unitario, desconto_percentual, preco_final_unitario, total_item)')
+    .select('id, numero_pedido, data_hora, created_at, regiao, vendedor, codigo_sap_cliente, cliente, cnpj, telefone, endereco, prazo, transportadora, transportadora_cnpj, transportadora_endereco, observacao, subtotal, desconto_total, total, status, order_items(id, item, codigo, descricao, marca, aplicacao, quantidade, preco_unitario, desconto_percentual, preco_final_unitario, total_item, preco_sem_imposto_unitario, imposto_unitario, fiscal_tax_rule_id, fiscal_status, fiscal_details)')
     .order('created_at', { ascending: false })
     .limit(300);
   if (filters.from) query = query.gte('created_at', filters.from);
@@ -628,13 +819,27 @@ async function supabaseListOrdersReport(filters = {}) {
   }
   const { data, error } = await query;
   if (error) throw error;
-  return data || [];
+  return enrichOrdersWithTransferSummaries(data || []);
+}
+
+async function enrichOrdersWithTransferSummaries(rows) {
+  if (!Array.isArray(rows) || !rows.length) return rows || [];
+  try {
+    const summaries = await supabaseListOrderTransferSummaries(rows.map((row) => row.id));
+    const byOrder = new Map((summaries || []).map((summary) => [summary.order_id, summary]));
+    return rows.map((row) => Object.assign({}, row, {
+      transfer_summary: byOrder.get(row.id) || null
+    }));
+  } catch (error) {
+    if (!isMissingSupabaseResource(error)) console.info('Resumo de transferencias indisponivel:', error.message || error);
+    return rows;
+  }
 }
 
 async function supabaseListQuotationsReport(filters = {}) {
   let query = supabaseClient
     .from('quotations')
-    .select('id, numero_cotacao, data_hora, created_at, regiao, vendedor, codigo_sap_cliente, cliente, cnpj, telefone, endereco, prazo, transportadora, transportadora_cnpj, transportadora_endereco, observacao, subtotal, desconto_total, total, status, quotation_items(id, item, codigo, descricao, marca, aplicacao, quantidade, preco_unitario, desconto_percentual, preco_final_unitario, total_item)')
+    .select('id, client_id, numero_cotacao, data_hora, created_at, regiao, vendedor, codigo_sap_cliente, cliente, cnpj, telefone, endereco, prazo, transportadora, transportadora_cnpj, transportadora_endereco, observacao, subtotal, desconto_total, total, status, quotation_items(id, item, codigo, descricao, marca, aplicacao, quantidade, preco_unitario, desconto_percentual, preco_final_unitario, total_item, preco_sem_imposto_unitario, imposto_unitario, fiscal_tax_rule_id, fiscal_status, fiscal_details)')
     .order('created_at', { ascending: false })
     .limit(300);
   if (filters.from) query = query.gte('created_at', filters.from);
@@ -722,17 +927,18 @@ function sanitizeDocumentItemsUpdate(payload = {}) {
 }
 
 async function supabaseListBusinessClients(filters = {}) {
-  let query = supabaseClient
-    .from('clients')
-    .select('id, codigo_sap_cliente, nome, nome_fantasia, cnpj, telefone, email, endereco, cidade, estado, ativo, observacoes, created_at, updated_at')
-    .order('nome', { ascending: true })
-    .limit(300);
-  if (filters.ativos === true) query = query.eq('ativo', true);
-  if (filters.termo) {
-    const term = `%${escapePostgrestFilter(filters.termo)}%`;
-    query = query.or(`codigo_sap_cliente.ilike.${term},nome.ilike.${term},nome_fantasia.ilike.${term},cnpj.ilike.${term},cidade.ilike.${term}`);
-  }
-  const { data, error } = await query;
+  const { data, error } = await supabaseClient.rpc('list_business_clients_scoped', {
+    filters: {
+      termo: String(filters.termo || '').trim(),
+      ativos: filters.ativos === true
+    }
+  });
+  if (error) throw error;
+  return data || [];
+}
+
+async function supabaseListActiveCrmSellers() {
+  const { data, error } = await supabaseClient.rpc('list_active_crm_sellers');
   if (error) throw error;
   return data || [];
 }
@@ -749,6 +955,8 @@ async function supabaseSaveBusinessClient(payload = {}) {
     cidade: String(payload.cidade || '').trim() || null,
     estado: String(payload.estado || '').trim().toUpperCase() || null,
     ativo: payload.ativo !== false,
+    commercial_discount_percent: Math.max(0, Number(payload.commercial_discount_percent || 0)),
+    assigned_seller_id: String(payload.assigned_seller_id || '').trim() || null,
     observacoes: String(payload.observacoes || '').trim() || null
   };
   if (!client.nome) throw new Error('Informe a razao social/nome do cliente.');
@@ -757,7 +965,7 @@ async function supabaseSaveBusinessClient(payload = {}) {
   const { data, error } = await supabaseClient
     .from('clients')
     .upsert(record, { onConflict: 'id' })
-    .select('id, codigo_sap_cliente, nome, nome_fantasia, cnpj, telefone, email, endereco, cidade, estado, ativo, observacoes')
+    .select('id, codigo_sap_cliente, nome, nome_fantasia, cnpj, telefone, email, endereco, cidade, estado, ativo, commercial_discount_percent, assigned_seller_id, observacoes')
     .single();
   if (error) throw error;
   await supabaseLog('SALVAR_CLIENTE', 'clients', data.id, client);
@@ -782,6 +990,8 @@ async function supabaseSaveBusinessClientFromCadastro(cadastro = {}) {
     cidade: cadastro.cidade || '',
     estado: cadastro.estado || '',
     ativo: true,
+    commercial_discount_percent: Number((existing && existing.commercial_discount_percent) || 0),
+    assigned_seller_id: cadastro.requested_by || (existing && existing.assigned_seller_id) || null,
     observacoes: [
       cadastro.protocolo ? `Origem portal: ${cadastro.protocolo}` : '',
       cadastro.observacoes || ''
@@ -792,7 +1002,7 @@ async function supabaseSaveBusinessClientFromCadastro(cadastro = {}) {
 async function supabaseFindBusinessClient(field, value) {
   const { data, error } = await supabaseClient
     .from('clients')
-    .select('id')
+    .select('id, commercial_discount_percent, assigned_seller_id')
     .eq(field, value)
     .limit(1)
     .maybeSingle();
@@ -851,9 +1061,10 @@ async function supabaseSaveBusinessCarrier(payload = {}) {
 }
 
 async function supabaseSearchOrderClients(term = '') {
+  const sellerSession = String((getStoredSession() || {}).perfil || '').toUpperCase() === 'VENDEDOR';
   const [clients, cadastros] = await Promise.all([
     supabaseListBusinessClients({ termo: term, ativos: true }),
-    supabaseSearchCadastrosClientesForOrder(term)
+    sellerSession ? Promise.resolve([]) : supabaseSearchCadastrosClientesForOrder(term)
   ]);
   const rows = clients.map((client) => ({
     origem: 'cliente',
@@ -867,6 +1078,7 @@ async function supabaseSearchOrderClients(term = '') {
     endereco: client.endereco,
     cidade: client.cidade,
     estado: client.estado,
+    commercial_discount_percent: Number(client.commercial_discount_percent || 0),
     status: client.ativo ? 'Ativo' : 'Inativo'
   }));
   const portalRows = cadastros.map((row) => Object.assign({ origem: 'portal' }, row));
@@ -893,7 +1105,7 @@ async function supabaseGetLogs(filters) {
 async function supabaseListCadastrosClientes(filters = {}) {
   let query = supabaseClient
     .from('cadastros_clientes')
-    .select('id, protocolo, status, codigo_sap_cliente, cnpj, razao_social, nome_fantasia, ie, telefone, whatsapp, email_compras, cidade, estado, endereco, numero, bairro, complemento, segmento, transportadora, prazo_desejado, vendedor, situacao_cadastral, cnae, possui_regime_especial, descricao_regime, observacoes, observacoes_internas, anexos, created_at')
+    .select('id, protocolo, status, codigo_sap_cliente, cnpj, razao_social, nome_fantasia, ie, telefone, whatsapp, email_compras, cidade, estado, endereco, numero, bairro, complemento, segmento, transportadora, prazo_desejado, vendedor, requested_by, situacao_cadastral, cnae, possui_regime_especial, descricao_regime, observacoes, observacoes_internas, anexos, created_at')
     .order('created_at', { ascending: false })
     .limit(150);
   if (filters.status) query = query.eq('status', filters.status);
@@ -950,7 +1162,7 @@ async function supabaseGetCadastrosPortalReport(filters = {}) {
   const totalPromise = buildCadastrosPortalQuery('id', { count: 'exact', head: true }, filters);
   const statusPromises = statuses.map((status) => buildCadastrosPortalQuery('id', { count: 'exact', head: true }, filters).eq('status', status));
   const recentPromise = buildCadastrosPortalQuery(
-    'id, protocolo, status, codigo_sap_cliente, cnpj, razao_social, nome_fantasia, telefone, whatsapp, email_compras, cidade, estado, endereco, numero, bairro, complemento, observacoes, vendedor, anexos, created_at',
+    'id, protocolo, status, codigo_sap_cliente, cnpj, razao_social, nome_fantasia, telefone, whatsapp, email_compras, cidade, estado, endereco, numero, bairro, complemento, observacoes, vendedor, requested_by, anexos, created_at',
     {},
     filters
   )
@@ -1014,7 +1226,7 @@ async function supabaseSearchCadastrosClientesForOrder(term = '') {
   const search = String(term || '').trim();
   let query = supabaseClient
     .from('cadastros_clientes')
-    .select('id, protocolo, status, codigo_sap_cliente, cnpj, razao_social, nome_fantasia, telefone, whatsapp, email_compras, cidade, estado, endereco, numero, bairro, complemento, transportadora, prazo_desejado, vendedor, created_at')
+    .select('id, protocolo, status, codigo_sap_cliente, cnpj, razao_social, nome_fantasia, telefone, whatsapp, email_compras, cidade, estado, endereco, numero, bairro, complemento, transportadora, prazo_desejado, vendedor, requested_by, created_at')
     .in('status', ['Aprovado', 'Finalizado SAP'])
     .order('created_at', { ascending: false })
     .limit(30);
@@ -1304,7 +1516,7 @@ function getImportAutoAnalysis(text, currentType) {
 function inferImportTypeFromMapping(mapping, currentType) {
   const fields = Object.values(mapping || {}).filter(Boolean);
   const has = (field) => fields.includes(field);
-  const descriptiveCount = ['descricao', 'marca', 'aplicacao', 'ano', 'ipi', 'preco_sem_imposto', 'grupo', 'categoria', 'montadora', 'oem', 'similar']
+  const descriptiveCount = ['descricao', 'marca', 'aplicacao', 'ano', 'ncm', 'ipi', 'preco_sem_imposto', 'url_imagem', 'grupo', 'categoria', 'montadora', 'detalhes', 'oem', 'similar']
     .filter(has).length;
   const hasOnlyStock = has('estoque') && descriptiveCount === 0 && !has('preco_sp') && !has('preco_pr') && !has('preco_referencia');
   if (has('preco_sp') && descriptiveCount === 0) return 'PRECO_SP';
@@ -1331,6 +1543,7 @@ const allowedProductFields = [
   'marca',
   'aplicacao',
   'ano',
+  'ncm',
   'ipi',
   'preco_sem_imposto',
   'estoque',
@@ -1399,7 +1612,7 @@ function getImportUpdatedFields(tipo) {
   if (tipo === 'PRECO_SP') return ['codigo', 'preco_sp'];
   if (tipo === 'PRECO_PR') return ['codigo', 'preco_pr'];
   if (tipo === 'CATALOGO_PESQUISA') {
-    return ['codigo', 'descricao', 'marca', 'aplicacao', 'ano', 'grupo', 'categoria', 'montadora', 'detalhes', 'oem', 'similar'];
+    return ['codigo', 'ncm', 'url_imagem', 'marca', 'aplicacao', 'ano', 'grupo', 'categoria', 'montadora', 'detalhes', 'oem', 'similar'];
   }
   return [
     'codigo',
@@ -1537,6 +1750,7 @@ function suggestImportField(header, tipo) {
     veiculoaplicacao: 'aplicacao',
     veiculosaplicacao: 'aplicacao',
     ano: 'ano',
+    ncm: 'ncm',
     ipi: 'ipi',
     precosimp: 'preco_sem_imposto',
     precosemimposto: 'preco_sem_imposto',
@@ -1547,6 +1761,16 @@ function suggestImportField(header, tipo) {
     quantidade: 'estoque',
     qtd: 'estoque',
     qtde: 'estoque',
+    url: 'url_imagem',
+    link: 'url_imagem',
+    foto: 'url_imagem',
+    imagem: 'url_imagem',
+    urlimagem: 'url_imagem',
+    urlfoto: 'url_imagem',
+    image: 'url_imagem',
+    imageurl: 'url_imagem',
+    picture: 'url_imagem',
+    pictureurl: 'url_imagem',
     grupo: 'grupo',
     linha: 'categoria',
     linhas: 'categoria',
@@ -1554,7 +1778,10 @@ function suggestImportField(header, tipo) {
     montadora: 'montadora',
     oem: 'oem',
     similar: 'similar',
-    similares: 'similar'
+    similares: 'similar',
+    descricaodetalhada: 'detalhes',
+    descricaoconsulta: 'detalhes',
+    palavraschave: 'detalhes'
   };
   if (exact[key]) return exact[key];
   if (['precocimp', 'precocomimposto', 'valor', 'prunitci', 'totalcimp', 'praposdesc'].includes(key)) {
@@ -1624,6 +1851,11 @@ function normalizeImportCode(value) {
     .trim();
 }
 
+function normalizeImportNcm(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.length === 8 ? digits : null;
+}
+
 function normalizeProductCode(value) {
   let text = normalizeImportCode(value);
   if (!text) return '';
@@ -1649,14 +1881,15 @@ function mapImportProduct(row, tipo) {
     marca: pickImport(row, ['marca']),
     aplicacao: pickImport(row, ['aplicacao']),
     ano: pickImport(row, ['ano']),
+    ncm: normalizeImportNcm(pickImport(row, ['ncm'])),
     ipi: importNumber(pickImport(row, ['ipi'])),
     preco_sem_imposto: precoSemImposto,
     status_cadastro: pickImport(row, ['status cadastro', 'status_cadastro']),
-    url_imagem: pickImport(row, ['url imagem', 'url_imagem', 'imagem']),
+    url_imagem: pickImport(row, ['url imagem', 'url_imagem', 'url', 'link', 'foto', 'imagem', 'image url', 'image_url', 'picture url']),
     grupo: pickImport(row, ['grupo']),
     categoria: pickImport(row, ['categoria', 'linha']),
     montadora: pickImport(row, ['montadora']),
-    detalhes: pickImport(row, ['detalhes', 'palavras chave', 'palavras-chave']),
+    detalhes: pickImport(row, ['detalhes', 'descricao detalhada', 'descricao consulta', 'palavras chave', 'palavras-chave']),
     oem: pickImport(row, ['oem']),
     similar: pickImport(row, ['similar', 'similares'])
   };
@@ -1722,4 +1955,257 @@ function formatProductImportLookupError(error, chunk = []) {
     error?.details ? `Detalhes: ${error.details}` : '',
     error?.hint ? `Dica: ${error.hint}` : ''
   ].filter(Boolean).join(' '));
+}
+
+function translateB2BAdminError(value) {
+  const code = String(value || '').trim();
+  const messages = {
+    USUARIO_INVALIDO: 'O usuário deve ter de 4 a 50 caracteres e usar somente letras minúsculas, números, ponto, hífen ou sublinhado.',
+    SENHA_INICIAL_FRACA: 'A senha precisa ter de 10 a 72 caracteres, com pelo menos uma letra e um número.',
+    USUARIO_JA_VINCULADO_A_OUTRO_CLIENTE: 'Esse usuário já está vinculado a outro cliente. Escolha outro nome de usuário.',
+    USUARIO_JA_EXISTE: 'Esse nome de usuário já está em uso. Escolha outro.',
+    USUARIO_PERTENCE_A_EQUIPE_INTERNA: 'Esse usuário pertence à equipe interna e não pode ser usado no B2B.',
+    CLIENTE_INATIVO: 'Ative o cliente antes de criar o acesso B2B.',
+    CLIENTE_NAO_ENCONTRADO: 'O cliente não foi encontrado. Atualize a página e tente novamente.',
+    RESPONSAVEL_INTERNO_INVALIDO: 'O responsável interno pelo acesso não está ativo.',
+    APENAS_ADMIN: 'Apenas administradores podem gerenciar o Portal B2B.',
+    SESSAO_INVALIDA: 'Sua sessão expirou. Entre novamente no CRM.'
+  };
+  if (messages[code]) return messages[code];
+  if (/already (?:been )?registered|already exists/i.test(code)) return messages.USUARIO_JA_EXISTE;
+  return code || 'Não foi possível gerenciar o acesso B2B.';
+}
+
+async function readB2BFunctionError(error, data) {
+  if (data?.error) return data.error;
+  const response = error?.context;
+  if (response && typeof response.json === 'function') {
+    try {
+      const payload = await (typeof response.clone === 'function' ? response.clone() : response).json();
+      if (payload?.error) return payload.error;
+    } catch (_) {
+      // A resposta pode já ter sido consumida pela biblioteca; nesse caso usa a mensagem padrão abaixo.
+    }
+  }
+  return error?.message || '';
+}
+
+async function supabaseManageB2BAccess(action, payload = {}) {
+  if (getStoredSession()?.perfil !== 'ADMIN') throw new Error('Apenas administradores podem gerenciar o Portal B2B.');
+  const { data, error } = await supabaseClient.functions.invoke('b2b-admin', {
+    body: Object.assign({}, payload, { action })
+  });
+  if (error) throw new Error(translateB2BAdminError(await readB2BFunctionError(error, data)));
+  if (data?.error) throw new Error(translateB2BAdminError(data.error));
+  return data || {};
+}
+
+async function supabaseGetProductCommercialPrice(productCode, originBranch, destinationUf, customerType = 'REVENDA') {
+  const { data, error } = await supabaseClient.rpc('get_product_commercial_price', {
+    product_code: productCode,
+    origin_branch: originBranch,
+    destination_uf: destinationUf,
+    customer_type: String(customerType || 'REVENDA').trim().toUpperCase()
+  });
+  if (error) throw error;
+  return data || {};
+}
+
+async function supabaseGetProductRoutePrices(productCode) {
+  const { data, error } = await supabaseClient.rpc('get_product_route_prices', { product_code: productCode });
+  if (error) throw error;
+  return data || [];
+}
+
+async function supabaseSubmitClientRegistrationRequest(payload = {}) {
+  const request = {
+    cnpj: onlyDigits(payload.cnpj || ''),
+    razao_social: String(payload.razao_social || '').trim(),
+    nome_fantasia: String(payload.nome_fantasia || '').trim(),
+    ie: String(payload.ie || '').trim(),
+    telefone: String(payload.telefone || '').trim(),
+    whatsapp: String(payload.whatsapp || '').trim(),
+    email_compras: String(payload.email_compras || '').trim(),
+    responsavel_compras: String(payload.responsavel_compras || '').trim(),
+    cep: onlyDigits(payload.cep || ''),
+    endereco: String(payload.endereco || '').trim(),
+    numero: String(payload.numero || '').trim(),
+    bairro: String(payload.bairro || '').trim(),
+    complemento: String(payload.complemento || '').trim(),
+    cidade: String(payload.cidade || '').trim(),
+    estado: String(payload.estado || '').trim().toUpperCase(),
+    segmento: String(payload.segmento || '').trim(),
+    transportadora: String(payload.transportadora || '').trim(),
+    prazo_desejado: String(payload.prazo_desejado || '').trim(),
+    observacoes: String(payload.observacoes || '').trim()
+  };
+  if (request.cnpj.length !== 14) throw new Error('Informe um CNPJ valido.');
+  if (!request.razao_social) throw new Error('Informe a razao social.');
+  if (!isValidEmail(request.email_compras)) throw new Error('Informe um email de compras valido.');
+  const { data, error } = await supabaseClient.rpc('submit_client_registration_request', { payload: request });
+  if (error) {
+    const message = String(error.message || '');
+    if (message.includes('CADASTRO_RECENTE_EXISTENTE')) throw new Error('Ja existe uma solicitacao recente para este CNPJ.');
+    if (message.includes('SEM_PERMISSAO')) throw new Error('Seu perfil nao pode solicitar este cadastro.');
+    throw error;
+  }
+  return data || {};
+}
+
+async function supabaseGetCommercialDiscountLimit() {
+  const { data, error } = await supabaseClient.rpc('max_discount_percent');
+  if (error) return 10;
+  const value = Number(data);
+  return Number.isFinite(value) && value >= 0 ? value : 10;
+}
+
+async function supabaseCreateSapImportBatch(payload) {
+  const { data, error } = await supabaseClient.rpc('create_sap_import_batch', { payload });
+  if (error) throw error;
+  return data || {};
+}
+
+async function supabaseStageSapImportRows(batchId, rows, onProgress) {
+  const chunks = chunkArray(rows, 200);
+  let result = {};
+  for (let index = 0; index < chunks.length; index += 1) {
+    const { data, error } = await supabaseClient.rpc('stage_sap_import_rows', {
+      batch_id: batchId,
+      rows: chunks[index]
+    });
+    if (error) throw error;
+    result = data || {};
+    if (onProgress) onProgress({ done: Math.min((index + 1) * 200, rows.length), total: rows.length });
+  }
+  return result;
+}
+
+async function supabaseValidateSapImportBatch(batchId) {
+  const { data, error } = await supabaseClient.rpc('validate_sap_import_batch', { batch_id: batchId });
+  if (error) throw error;
+  return data || {};
+}
+
+async function supabasePreviewSapImportBatch(batchId, page = 1, pageSize = 50) {
+  const { data, error } = await supabaseClient.rpc('preview_sap_import_batch', {
+    batch_id: batchId,
+    page,
+    page_size: pageSize
+  });
+  if (error) throw error;
+  return data || {};
+}
+
+async function supabaseApproveSapImportBatch(batchId) {
+  const { data, error } = await supabaseClient.rpc('approve_sap_import_batch', { batch_id: batchId });
+  if (error) throw error;
+  return data || {};
+}
+
+async function supabaseCommitSapImportBatch(batchId) {
+  const { data, error } = await supabaseClient.rpc('commit_sap_import_batch', { batch_id: batchId });
+  if (error) throw error;
+  return data || {};
+}
+
+async function supabaseListSapImportBatches(filters = {}) {
+  const { data, error } = await supabaseClient.rpc('list_sap_import_batches', { filters });
+  if (error) throw error;
+  return data || { rows: [] };
+}
+
+async function supabaseGetDataSyncStatus(filters = {}) {
+  return (await supabaseDataSyncRpc('get_data_sync_status', { filters }))
+    || { source: null, last_batch: null, connected: false };
+}
+
+async function supabaseListDataSyncBatches(filters = {}) {
+  return (await supabaseDataSyncRpc('list_data_sync_batches', { filters })) || { rows: [], count: 0 };
+}
+
+async function supabaseListDataSyncErrors(filters = {}) {
+  return (await supabaseDataSyncRpc('list_data_sync_errors', { filters })) || { rows: [], count: 0 };
+}
+
+async function supabaseListDataSyncAudit(filters = {}) {
+  return (await supabaseDataSyncRpc('list_data_sync_audit', { filters })) || { rows: [], count: 0 };
+}
+
+let dataSyncSessionRefreshPromise = null;
+
+function isDataSyncSessionError(error) {
+  const message = String(error?.message || '').toLowerCase();
+  const status = Number(error?.status || error?.context?.status || 0);
+  return status === 401
+    || message.includes('permission denied for function')
+    || message.includes('jwt')
+    || message.includes('session');
+}
+
+async function refreshDataSyncSession() {
+  if (!dataSyncSessionRefreshPromise) {
+    dataSyncSessionRefreshPromise = supabaseClient.auth.refreshSession()
+      .then(({ data, error }) => {
+        if (error || !data?.session) throw new Error('Sua sessão expirou. Entre novamente no CRM.');
+        return data.session;
+      })
+      .finally(() => { dataSyncSessionRefreshPromise = null; });
+  }
+  return dataSyncSessionRefreshPromise;
+}
+
+async function supabaseDataSyncRpc(name, params) {
+  let result = await supabaseClient.rpc(name, params);
+  if (result.error && isDataSyncSessionError(result.error)) {
+    await refreshDataSyncSession();
+    result = await supabaseClient.rpc(name, params);
+  }
+  if (result.error) {
+    if (isDataSyncSessionError(result.error)) throw new Error('Sua sessão expirou. Saia e entre novamente no CRM.');
+    throw result.error;
+  }
+  return result.data;
+}
+
+async function supabaseTriggerDataSync() {
+  async function currentSession(forceRefresh = false) {
+    if (forceRefresh) return refreshDataSyncSession();
+    const { data, error } = await supabaseClient.auth.getSession();
+    if (error) throw error;
+    return data?.session || refreshDataSyncSession();
+  }
+
+  async function invoke(session) {
+    return supabaseClient.functions.invoke('excel-sync', {
+      body: { source: 'EXCEL_API' },
+      headers: { Authorization: `Bearer ${session.access_token}` }
+    });
+  }
+
+  let session = await currentSession();
+  let { data, error } = await invoke(session);
+  if (error && isDataSyncSessionError(error)) {
+    session = await currentSession(true);
+    ({ data, error } = await invoke(session));
+  }
+  if (error) {
+    const contextMessage = error.context && typeof error.context.json === 'function'
+      ? await error.context.json().catch(() => null)
+      : null;
+    throw new Error(contextMessage?.error || error.message || 'Não foi possível iniciar a sincronização.');
+  }
+  if (data?.error) throw new Error(data.error);
+  return data || {};
+}
+
+async function supabaseGetFiscalPending(filters = {}) {
+  const { data, error } = await supabaseClient.rpc('get_fiscal_pending', { filters });
+  if (error) throw error;
+  return data || { summary: {}, rows: [] };
+}
+
+async function supabaseGenerateCommercialList(route, filters = {}) {
+  const { data, error } = await supabaseClient.rpc('generate_commercial_list', { route, filters });
+  if (error) throw error;
+  return data || { rows: [] };
 }

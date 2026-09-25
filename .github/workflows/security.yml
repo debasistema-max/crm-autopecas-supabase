@@ -1,0 +1,59 @@
+name: Security checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript, python]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@b96794f015dfd88f77b49b1c93e0fa7110f94c63
+        with:
+          languages: ${{ matrix.language }}
+      - name: Analyze
+        uses: github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63
+
+  regression:
+    name: Security regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: scripts/requirements-data-sync.txt
+      - run: pip install -r scripts/requirements-data-sync.txt
+      - run: npm run check
+      - run: npm run test:python
+      - run: npm run test:static
+      - name: Reject committed private secrets
+        shell: bash
+        run: |
+          ! grep -RInE --exclude-dir=.git --exclude='security.yml' '(SUPABASE_SERVICE_ROLE_KEY|DATA_SYNC_SCHEDULER_SECRET|MS_GRAPH_REFRESH_TOKEN|DATA_SYNC_GITHUB_TOKEN)[[:space:]]*[:=][[:space:]]*[A-Za-z0-9._-]{16,}' .

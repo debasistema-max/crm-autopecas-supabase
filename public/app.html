@@ -3,42 +3,73 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://brasilapi.com.br https://www.receitaws.com.br; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
+  <meta name="theme-color" content="#f3f5f7">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>Nova Empresa | CRM</title>
-  <link rel="stylesheet" href="css/theme.css?v=20260701-5">
-  <link rel="stylesheet" href="css/app.css?v=20260722-dashboard-v3-1">
+  <link rel="manifest" href="manifest.webmanifest?v=20260911-1">
+  <link rel="stylesheet" href="css/theme.css?v=20260826-2">
+  <link rel="stylesheet" href="css/app.css?v=20260921-3">
 </head>
 <body class="app-page">
   <div class="app-shell">
-    <aside class="sidebar" id="sidebar">
-      <a class="sidebar-brand" href="#dashboard" aria-label="Inicio">
-        <img src="assets/logo-neutral.svg" alt="" class="sidebar-logo" data-company-logo>
-        <span data-company-name>Nova Empresa</span>
-      </a>
+    <button class="sidebar-backdrop" id="sidebarBackdrop" type="button" aria-label="Fechar menu"></button>
+    <aside class="sidebar" id="sidebar" aria-label="Navegação principal">
+      <div class="sidebar-header">
+        <a class="sidebar-brand" href="#dashboard" aria-label="Ir para o início">
+          <img src="assets/logo-neutral.svg" alt="" class="sidebar-logo" data-company-logo>
+          <span class="sidebar-brand-copy"><strong data-company-name>Nova Empresa</strong><small>CRM Comercial</small></span>
+        </a>
+      </div>
       <nav class="side-nav" aria-label="Modulos">
-        <button class="nav-item is-active" data-module="dashboard">Dashboard</button>
-        <button class="nav-item" data-module="products">Produtos</button>
-        <button class="nav-item" data-module="ordersReport">Pedidos</button>
-        <button class="nav-item" data-module="quoteReports">Cotacoes</button>
-        <button class="nav-item" data-module="partners">Parceiros</button>
-        <button class="nav-item" data-module="sap">Importacao SAP</button>
-        <button class="nav-item" data-module="importBatches">Lotes de Importacao</button>
-        <button class="nav-item" data-module="cadastros">Cadastros</button>
-        <button class="nav-item" data-module="portalCadastros">Portal Clientes</button>
-        <button class="nav-item" data-module="companySettings">Configuracoes da Empresa</button>
-        <button class="nav-item" data-module="users">Usuarios</button>
-        <button class="nav-item" data-module="logs">Logs</button>
+        <section class="nav-group" data-nav-group>
+          <h2 class="nav-group-label">Comercial</h2>
+          <button class="nav-item is-active" data-module="dashboard" title="Início"><span class="nav-icon" aria-hidden="true">IN</span><span class="nav-label">Início</span></button>
+          <button class="nav-item" data-module="partners" title="Clientes e transportadoras"><span class="nav-icon" aria-hidden="true">CL</span><span class="nav-label">Parceiros</span></button>
+          <button class="nav-item" data-module="quoteReports" title="Cotações"><span class="nav-icon" aria-hidden="true">CT</span><span class="nav-label">Cotações</span></button>
+          <button class="nav-item" data-module="ordersReport" title="Pedidos"><span class="nav-icon" aria-hidden="true">PD</span><span class="nav-label">Pedidos</span></button>
+        </section>
+        <section class="nav-group" data-nav-group>
+          <h2 class="nav-group-label">Catálogo</h2>
+          <button class="nav-item" data-module="products" title="Produtos"><span class="nav-icon" aria-hidden="true">PR</span><span class="nav-label">Produtos</span></button>
+        </section>
+        <section class="nav-group" data-nav-group>
+          <h2 class="nav-group-label">Operação</h2>
+          <button class="nav-item" data-module="stockTransfers" title="Transferências"><span class="nav-icon" aria-hidden="true">TR</span><span class="nav-label">Transferências</span></button>
+          <button class="nav-item" data-module="dataCentral" title="Central de Dados"><span class="nav-icon" aria-hidden="true">DB</span><span class="nav-label">Central de Dados</span></button>
+          <button class="nav-item" data-module="sap" title="Importação e Integrações"><span class="nav-icon" aria-hidden="true">IM</span><span class="nav-label">Importação e Integrações</span></button>
+          <button class="nav-item" data-module="cadastros" title="Cadastros"><span class="nav-icon" aria-hidden="true">CD</span><span class="nav-label">Cadastros</span></button>
+          <button class="nav-item" data-module="portalCadastros" title="Portal de clientes"><span class="nav-icon" aria-hidden="true">PC</span><span class="nav-label">Portal de clientes</span></button>
+        </section>
+        <section class="nav-group" data-nav-group>
+          <h2 class="nav-group-label">Gestão</h2>
+          <button class="nav-item" data-module="users" title="Usuários"><span class="nav-icon" aria-hidden="true">US</span><span class="nav-label">Usuários</span></button>
+          <button class="nav-item" data-module="logs" title="Logs"><span class="nav-icon" aria-hidden="true">LG</span><span class="nav-label">Logs</span></button>
+        </section>
+        <section class="nav-group" data-nav-group>
+          <h2 class="nav-group-label">Sistema</h2>
+          <button class="nav-item" data-module="companySettings" title="Configurações da empresa"><span class="nav-icon" aria-hidden="true">CF</span><span class="nav-label">Configurações</span></button>
+          <button class="nav-item" data-module="taxRules" title="Configuração fiscal"><span class="nav-icon" aria-hidden="true">FI</span><span class="nav-label">Fiscal</span></button>
+        </section>
       </nav>
+      <div class="sidebar-footer">
+        <button class="sidebar-collapse" id="sidebarCollapseButton" type="button" aria-label="Recolher menu" aria-pressed="false">
+          <span class="sidebar-collapse-icon" aria-hidden="true">‹</span><span class="sidebar-collapse-label">Recolher menu</span>
+        </button>
+      </div>
     </aside>
 
     <section class="workspace">
       <header class="topbar">
-        <button class="icon-button" id="menuButton" type="button" aria-label="Abrir menu">☰</button>
-        <div>
-          <p class="topbar-kicker">Operacao Comercial</p>
-          <h1 id="pageTitle">Dashboard</h1>
+        <button class="icon-button" id="menuButton" type="button" aria-label="Abrir menu"></button>
+        <div class="topbar-title">
+          <p class="topbar-kicker" id="pageContext">Comercial</p>
+          <h1 id="pageTitle">Inicio</h1>
         </div>
         <div class="topbar-user">
-          <span id="userName">Usuario</span>
+          <span class="topbar-user-copy"><strong id="userName">Usuário</strong><small id="userRole">Perfil</small></span>
           <button class="btn btn-ghost" id="logoutButton" type="button">Sair</button>
         </div>
       </header>
@@ -46,21 +77,34 @@
       <main class="content" id="content" tabindex="-1"></main>
     </section>
   </div>
+  <nav class="mobile-nav" id="mobileNav" aria-label="Acesso rapido">
+    <button type="button" data-mobile-module="products">Produtos</button>
+    <button type="button" data-mobile-module="partners">Clientes</button>
+    <button type="button" data-mobile-module="ordersReport">Pedidos</button>
+    <button type="button" data-mobile-module="quoteReports">Cotacoes</button>
+  </nav>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0/dist/umd/supabase.js" integrity="sha384-iLddHTLokph6Omwoyid4XKxHaWa6w41BnoEj0q5oOrzmYPpHIKt1wyjReA7s//pP" crossorigin="anonymous"></script>
+  <script src="js/vendor/xlsx.full.min.js?v=0.20.3"></script>
   <script src="js/config.js?v=20260701-5"></script>
+  <script src="js/utils/format.js?v=20260719-1"></script>
   <script src="js/supabase.js?v=20260701-5"></script>
-  <script src="js/supabase_store.js?v=20260722-dashboard-v3-1"></script>
-  <script src="js/company_settings.js?v=20260720-1"></script>
-  <script src="js/auth.js?v=20260701-5"></script>
-  <script src="js/dashboard.js?v=20260722-dashboard-v3-1"></script>
-  <script src="js/products.js?v=20260702-3"></script>
-  <script src="js/partners.js?v=20260702-1"></script>
-  <script src="js/orders.js?v=20260708-import-v2-review"></script>
-  <script src="js/import_batches.js?v=20260714-import-batches-1"></script>
-  <script src="js/cadastros.js?v=20260703-1"></script>
-  <script src="js/quotes.js?v=20260703-3"></script>
-  <script src="js/users.js?v=20260702-2"></script>
-  <script src="js/app.js?v=20260720-white-label-1"></script>
+  <script src="js/supabase_store.js?v=20260922-1"></script>
+  <script src="js/cnpj_lookup.js?v=20260825-1"></script>
+  <script src="js/company_settings.js?v=20260828-1"></script>
+  <script src="js/auth.js?v=20260815-1"></script>
+  <script src="js/components/ui.js?v=20260826-2"></script>
+  <script src="js/dashboard.js?v=20260921-1"></script>
+  <script src="js/products.js?v=20260918-5"></script>
+  <script src="js/partners.js?v=20260921-1"></script>
+  <script src="js/orders.js?v=20260921-1"></script>
+  <script src="js/imports.js?v=20260827-1"></script>
+  <script src="js/data_sync.js?v=20260921-2"></script>
+  <script src="js/transfers.js?v=20260827-1"></script>
+  <script src="js/cadastros.js?v=20260828-1"></script>
+  <script src="js/quotes.js?v=20260921-1"></script>
+  <script src="js/tax_rules.js?v=20260828-1"></script>
+  <script src="js/users.js?v=20260828-1"></script>
+  <script src="js/app.js?v=20260921-1"></script>
 </body>
 </html>

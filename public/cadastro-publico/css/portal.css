@@ -15,6 +15,12 @@
 
 * { box-sizing: border-box; }
 
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 body {
   margin: 0;
   font-family: var(--font);
@@ -27,7 +33,8 @@ body {
 button, input, select, textarea { font: inherit; }
 
 .portal-shell {
-  width: min(960px, 100%);
+  width: min(960px, calc(100vw - 36px));
+  min-width: 0;
   margin: 0 auto;
   padding: 18px;
 }
@@ -44,11 +51,18 @@ button, input, select, textarea { font: inherit; }
 
 .hero {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 14px;
   align-items: center;
   padding: 18px;
   margin-bottom: 14px;
+}
+
+.hero > div,
+.progress-card,
+.form-card,
+.success-card {
+  min-width: 0;
 }
 
 .logo {
@@ -75,6 +89,11 @@ button, input, select, textarea { font: inherit; }
 .hero p {
   margin: 6px 0 0;
   color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.company-contact:empty {
+  display: none;
 }
 
 .time-badge {
@@ -140,6 +159,7 @@ button, input, select, textarea { font: inherit; }
   margin: 6px 0 0;
   color: var(--muted);
   line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .upload-hint {
@@ -316,9 +336,13 @@ textarea:focus {
 }
 
 @media (max-width: 720px) {
-  .portal-shell { padding: 10px; }
+  .portal-shell {
+    width: 100%;
+    max-width: 100vw;
+    padding: 10px;
+  }
   .hero {
-    grid-template-columns: auto 1fr;
+    grid-template-columns: auto minmax(0, 1fr);
   }
   .time-badge {
     grid-column: 1 / -1;

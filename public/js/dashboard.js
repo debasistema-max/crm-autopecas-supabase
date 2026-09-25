@@ -1,4 +1,4 @@
-function money(value) {
+﻿function money(value) {
   return new Intl.NumberFormat(APP_CONFIG.locale, {
     style: 'currency',
     currency: APP_CONFIG.currency
@@ -53,16 +53,33 @@ async function renderDashboard(container) {
   await loadCommercialDashboard(container, state);
 }
 
+function canViewDashboardTransfers() {
+  try {
+    const session = getCurrentSession && getCurrentSession();
+    const modules = Array.isArray(session && session.modules) ? session.modules : [];
+    if (String(session && session.perfil || '').toUpperCase() === 'VENDEDOR') return false;
+    return (session && session.perfil === 'ADMIN') || modules.includes('pedidos');
+  } catch (error) {
+    return false;
+  }
+}
+
 function renderCommercialDashboardShell(state) {
   return `
-    <section class="panel commercial-dashboard">
-      <div class="panel-header dashboard-header">
-        <div>
-          <h2>Dashboard Comercial</h2>
-          <p data-dashboard-scope>Indicadores do periodo selecionado.</p>
+    <div class="module-page dashboard-workspace">
+      ${CrmUi.renderPageHeader(
+        'Visao comercial',
+        'Acompanhe vendas, cotacoes e desempenho da operacao no periodo selecionado.',
+        '<button class="btn btn-secondary" type="button" data-dashboard-refresh>Atualizar indicadores</button>',
+        'Comercial'
+      )}
+      <section class="panel commercial-dashboard dashboard-control-panel">
+        <div class="section-heading">
+          <div>
+            <h3>Periodo e escopo</h3>
+            <p data-dashboard-scope>Indicadores do periodo selecionado.</p>
+          </div>
         </div>
-        <button class="btn secondary" type="button" data-dashboard-refresh>Atualizar</button>
-      </div>
       <div class="dashboard-periods" role="group" aria-label="Periodo do dashboard">
         ${renderDashboardPeriodButton('today', 'Hoje', state.period)}
         ${renderDashboardPeriodButton('7d', '7 dias', state.period)}
@@ -95,9 +112,10 @@ function renderCommercialDashboardShell(state) {
           </select>
         </label>
       </form>
-    </section>
-    <div data-dashboard-result aria-live="polite">
-      <div class="empty-state">Carregando dashboard...</div>
+      </section>
+      <div data-dashboard-result aria-live="polite">
+        ${CrmUi.renderState('loading', 'Carregando indicadores', 'Estamos consolidando os dados comerciais do periodo.')}
+      </div>
     </div>
   `;
 }
@@ -166,28 +184,38 @@ async function loadCommercialDashboard(container, state) {
   const refreshButton = container.querySelector('[data-dashboard-refresh]');
   refreshButton.disabled = true;
   refreshButton.textContent = 'Atualizando...';
-  result.innerHTML = '<div class="empty-state">Carregando dashboard...</div>';
+  result.innerHTML = CrmUi.renderState('loading', 'Atualizando indicadores', 'Consultando os dados comerciais do periodo selecionado.');
 
   try {
     validateDashboardPeriod(state.dateFrom, state.dateTo);
     const response = await supabaseGetCommercialDashboardSummary(state);
     const data = normalizeCommercialDashboardPayload(response);
+    if (canViewDashboardTransfers()) {
+      data.transfer_summary = await loadDashboardTransferSummary();
+    }
     syncSellerFilter(container, data, state);
     syncDashboardScope(container, data);
     result.innerHTML = renderCommercialDashboard(data);
   } catch (error) {
-    result.innerHTML = `
-      <section class="panel">
-        <div class="empty-state dashboard-error-state">
-          <strong>${escapeHtml(error.message || 'Nao foi possivel carregar o dashboard.')}</strong>
-          <button class="btn secondary" type="button" data-dashboard-retry>Tentar novamente</button>
-        </div>
-      </section>
-    `;
+    result.innerHTML = CrmUi.renderState(
+      'error',
+      'Nao foi possivel carregar o dashboard',
+      error.message || 'Verifique sua conexao e tente novamente.',
+      '<button class="btn btn-secondary" type="button" data-dashboard-retry>Tentar novamente</button>'
+    );
     result.querySelector('[data-dashboard-retry]').addEventListener('click', () => loadCommercialDashboard(container, state));
   } finally {
     refreshButton.disabled = false;
-    refreshButton.textContent = 'Atualizar';
+    refreshButton.textContent = 'Atualizar indicadores';
+  }
+}
+
+async function loadDashboardTransferSummary() {
+  try {
+    return await supabaseGetDashboardTransferSummary();
+  } catch (error) {
+    console.info('Resumo de transferencias indisponivel:', error.message || error);
+    return { unavailable: true };
   }
 }
 
@@ -325,12 +353,44 @@ function renderCommercialDashboard(data) {
       ${renderRankingPanel('Clientes com maior movimentacao', rankings.clients, 'nome', 'pedidos', 'total')}
     </section>
     ${renderAbcPanel(data.abc_curve || [])}
+    ${canViewDashboardTransfers() ? renderTransferSummaryPanel(data.transfer_summary || {}) : ''}
     ${access.can_view_stock ? renderStockPanel(data.stock || {}) : ''}
     ${access.can_view_imports ? renderImportPanel(data.imports || {}) : ''}
     <section class="dashboard-shortcuts" aria-label="Atalhos">
-      <button class="btn secondary" type="button" data-dashboard-route="ordersReport">Ver pedidos</button>
-      <button class="btn secondary" type="button" data-dashboard-route="quoteReports">Ver cotacoes</button>
-      <button class="btn secondary" type="button" data-dashboard-route="products">Consultar produtos</button>
+      <button class="btn btn-secondary" type="button" data-dashboard-route="ordersReport">Ver pedidos</button>
+      ${canViewDashboardTransfers() ? '<button class="btn btn-secondary" type="button" data-dashboard-route="stockTransfers">Ver transferencias</button>' : ''}
+      <button class="btn btn-secondary" type="button" data-dashboard-route="quoteReports">Ver cotacoes</button>
+      <button class="btn btn-secondary" type="button" data-dashboard-route="products">Consultar produtos</button>
+    </section>
+  `;
+}
+
+function renderTransferSummaryPanel(summary) {
+  if (summary.unavailable) {
+    return `
+      <section class="panel dashboard-transfer-panel">
+        <div class="panel-header">
+          <div><h2>Transferencias PR -> SP</h2><p>Resumo operacional indisponivel no momento.</p></div>
+          <button class="btn btn-secondary" type="button" data-dashboard-route="stockTransfers">Abrir</button>
+        </div>
+      </section>
+    `;
+  }
+
+  const active = Number(summary.active || 0);
+  return `
+    <section class="panel dashboard-transfer-panel">
+      <div class="panel-header">
+        <div><h2>Transferencias PR -> SP</h2><p>Solicitacoes abertas que nao movimentam estoque no CRM.</p></div>
+        <button class="btn btn-secondary" type="button" data-dashboard-route="stockTransfers">Abrir</button>
+      </div>
+      <div class="dashboard-transfer-metrics">
+        <article><span>Pendentes</span><strong>${dashboardInteger(summary.pending)}</strong></article>
+        <article><span>Aprovadas</span><strong>${dashboardInteger(summary.approved)}</strong></article>
+        <article><span>Em transferencia</span><strong>${dashboardInteger(summary.in_transit)}</strong></article>
+        <article><span>Qtd. ativa</span><strong>${formatTransferDashboardQty(summary.active_qty)}</strong></article>
+      </div>
+      <p class="dashboard-note">${active ? `${dashboardInteger(active)} solicitacao${active === 1 ? '' : 'es'} aberta${active === 1 ? '' : 's'}.` : 'Nenhuma transferencia aberta.'}</p>
     </section>
   `;
 }
@@ -462,6 +522,10 @@ function dashboardCompactMoney(value) {
     notation: 'compact',
     maximumFractionDigits: 1
   }).format(Number(value || 0));
+}
+
+function formatTransferDashboardQty(value) {
+  return Number(value || 0).toLocaleString(APP_CONFIG.locale, { maximumFractionDigits: 3 });
 }
 
 function formatDateTime(value) {

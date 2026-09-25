@@ -3,84 +3,76 @@ let orderClientSearchTimer = null;
 let orderSelectedProduct = null;
 let orderImportPreviewItems = [];
 let orderCreateSaved = false;
+let orderClientDiscountPercent = 0;
+
+function canRenderTransferInformation() {
+  return typeof canCurrentUserAccessTransfers !== 'function' || canCurrentUserAccessTransfers();
+}
 
 async function renderOrders(container) {
+  if (typeof setCommercialFocusMode === 'function') setCommercialFocusMode(true);
   orderItems = [];
   orderSelectedProduct = null;
   orderCreateSaved = false;
+  orderClientDiscountPercent = 0;
   const companySettings = await loadCompanySettings();
   const branchLabel = formatCompanyBranchLabel(companySettings);
   container.innerHTML = `
-    <section class="sap-document">
-      <div class="sap-titlebar">
-        <div class="sap-title"><span class="sap-title-icon">#</span><h2>Pedido de venda</h2></div>
-        <strong>No. Novo</strong>
-      </div>
+    <div class="module-page commercial-operation-page">
+      <header class="commercial-focus-header">
+        <button class="btn btn-ghost" id="orderFocusBackButton" type="button" aria-label="Voltar para pedidos">← Voltar</button>
+        <strong>Novo pedido</strong>
+      </header>
+    <section class="sap-document commercial-document" data-document-kind="order">
       <div class="sap-window">
-        <section class="sap-section">
-          <h3>Dados gerais</h3>
-          <div class="sap-form-grid">
-            <div class="sap-form-left">
-              <label>Filial
-                <select id="orderBranch"><option>${escapeHtml(branchLabel)}</option></select>
-              </label>
-              <div class="sap-inline-fields">
-                <label>Cliente | CPF/CNPJ
-                  <input id="orderClientSapCode" type="text" placeholder="Codigo SAP">
-                </label>
-                <button class="sap-mini-button" id="orderCadastroSearchButton" type="button" title="Buscar cliente">&#128269;</button>
-                <label>
-                  <input id="orderCnpj" type="text" placeholder="CNPJ">
-                </label>
-              </div>
-              <label>Nome cliente<input id="orderClient" type="text"></label>
-              <label>Buscar cliente
-                <span class="sap-search-field">
-                  <input id="orderCadastroSearch" type="search" placeholder="Codigo SAP, CNPJ, protocolo ou empresa">
-                  <button class="sap-search-button" id="orderCadastroSearchSubmitButton" type="button" title="Buscar cliente">&#128269;</button>
-                </span>
-              </label>
-              <label>Pessoa de contato<input id="orderPhone" type="text"></label>
-              <label>No Ref.Cli.<input id="orderClientRef" type="text"></label>
-              <label>Vendedor<input id="orderSellerDisplay" type="text" value="${escapeHtml((getStoredSession() || {}).nome || '')}"></label>
-              <label>Utilizacao principal<select id="orderUsage"><option>Revenda</option><option>Consumo</option></select></label>
-              <label>Deposito<select id="orderRegion"><option value="SP">02 - FILIAL - SP</option><option value="PR">01 - MATRIZ - PR</option></select></label>
+        <section class="sap-section sap-general-section">
+          <div class="commercial-context-grid">
+            <label class="commercial-client-search">Buscar cliente
+              <span class="sap-search-field">
+                <input id="orderCadastroSearch" type="search" placeholder="Nome, CNPJ ou codigo SAP" autocomplete="off">
+                <button class="sap-search-button" id="orderCadastroSearchSubmitButton" type="button" title="Buscar cliente" aria-label="Buscar cliente">&#128269;</button>
+              </span>
+            </label>
+            <label>Filial de faturamento<select id="orderRegion"><option value="PR">Matriz PR</option><option value="SP">Filial SP</option></select></label>
+            <input id="orderUsage" type="hidden" value="Revenda">
+          </div>
+          <input id="orderBillingState" type="hidden">
+          <details class="commercial-more-fields">
+            <summary>Dados complementares</summary>
+            <div class="commercial-more-grid">
+              <label>Cliente<input id="orderClient" type="text"></label>
+              <label>Codigo SAP<input id="orderClientSapCode" type="text"></label>
+              <label>CNPJ<input id="orderCnpj" type="text"></label>
+              <label>Contato<input id="orderPhone" type="text"></label>
+              <label>Referencia do cliente<input id="orderClientRef" type="text"></label>
               <label>Endereco<input id="orderAddress" type="text"></label>
-            </div>
-            <div class="sap-form-right">
-              <label>Status SAP<input type="text" value="Aberto" readonly></label>
-              <label>Dt.Pedido<input type="text" value="${formatDateInput(new Date())}" readonly></label>
               <label>Valido ate<input type="date" id="orderValidUntil"></label>
-              <label>Autorizacao SAP<input type="text" value="Sem status" readonly></label>
-              <label>Autorizacao portal<input type="text" value="Sem status" readonly></label>
+              <label>Vendedor<input id="orderSellerDisplay" type="text" value="${escapeHtml((getStoredSession() || {}).nome || '')}" readonly></label>
+              <label>Unidade do sistema<select id="orderBranch"><option>${escapeHtml(branchLabel)}</option></select></label>
+              <button class="btn btn-secondary" id="orderCadastroSearchButton" type="button">Buscar pelos dados informados</button>
             </div>
-          </div>
-          <div id="orderCadastroResults" class="sap-search-results">
-            <div class="empty-state compact-state">Clientes e cadastros aprovados aparecem aqui para preencher o pedido.</div>
-          </div>
+          </details>
+          <div id="orderCadastroResults" class="sap-search-results" hidden></div>
         </section>
 
         <section class="sap-section sap-tabs-section">
-          <div class="sap-tabs">
-            <button class="is-active" type="button" data-sap-tab="items">Itens</button>
-            <button type="button" data-sap-tab="freight">Frete / Pagamento</button>
+          <div class="sap-tabs" role="tablist" aria-label="Etapas do pedido">
+            <button class="is-active" type="button" role="tab" aria-selected="true" data-sap-tab="items">Produtos</button>
+            <button type="button" role="tab" aria-selected="false" data-sap-tab="freight">Entrega e pagamento</button>
           </div>
-          <div class="sap-tab-panel" data-sap-panel="items">
-            <div class="sap-tab-tools">
-              <label class="sap-checkbox"><input type="checkbox" checked> Simular impostos</label>
-              <span id="cartCount">0 itens</span>
-            </div>
+          <div class="sap-tab-panel" role="tabpanel" data-sap-panel="items">
+            <span id="cartCount" hidden>0 itens</span>
             <div id="cartItems" class="sap-items-wrap"></div>
             <div class="sap-bottom-grid">
               <div class="sap-add-item">
                 <form id="orderProductSearch" class="sap-add-form">
-                  <label>Cod.Item / EAN
-                    <input id="orderProductTerm" type="search">
+                  <label>Codigo, nome ou aplicacao
+                    <input id="orderProductTerm" type="search" placeholder="Digite e pressione Enter" autocomplete="off">
                   </label>
-                  <label>Nome item
-                    <input id="orderProductNamePreview" type="text">
+                  <label class="commercial-selection-field">Produto selecionado
+                    <input id="orderProductNamePreview" type="text" readonly>
                   </label>
-                  <label>Grupo
+                  <label class="commercial-selection-field">Grupo
                     <select id="orderProductGroupPreview"><option value=""></option></select>
                   </label>
                   <div class="actions-row sap-item-search-actions">
@@ -89,14 +81,14 @@ async function renderOrders(container) {
                   </div>
                   <div class="sap-stock-line" id="orderProductStockLine" hidden>Disp. Venda: <strong>-</strong> / Pr.Unit.: <strong>-</strong></div>
                   <label id="orderQuantityLabel" hidden>Quantidade
-                    <input id="orderAddQuantity" type="number" min="0" value="0">
+                    <input id="orderAddQuantity" type="number" min="1" value="1">
                   </label>
                   <div class="actions-row sap-add-controls" id="orderAddControls" hidden>
                     <button class="btn btn-primary" id="orderAddSelectedProductButton" type="button">Adicionar</button>
                     <button class="btn btn-ghost" id="orderClearProductButton" type="button">Limpar</button>
                   </div>
                 </form>
-                <div id="orderSearchResults" class="sap-product-results"><div class="empty-state compact-state">Pesquise para adicionar itens ao pedido.</div></div>
+                <div id="orderSearchResults" class="sap-product-results"></div>
               </div>
               <div class="sap-totals" id="cartTotals"></div>
             </div>
@@ -121,7 +113,7 @@ async function renderOrders(container) {
               </div>
             </div>
           </div>
-          <div class="sap-tab-panel" data-sap-panel="freight" hidden>
+          <div class="sap-tab-panel" role="tabpanel" data-sap-panel="freight" hidden>
             <div class="sap-freight-grid">
               <label>Tipo de envio
                 <select id="orderShippingType">
@@ -133,13 +125,13 @@ async function renderOrders(container) {
               <label>Codigo transportadora
                 <span class="sap-search-field">
                   <input id="orderCarrierSearch" type="search">
-                  <button class="sap-search-button" id="orderCarrierCodeSearchButton" type="button">...</button>
+                  <button class="sap-search-button" id="orderCarrierCodeSearchButton" type="button" aria-label="Buscar transportadora por codigo">...</button>
                 </span>
               </label>
               <label>Nome transportadora
                 <span class="sap-search-field">
                   <input id="orderCarrier" type="text">
-                  <button class="sap-search-button" id="orderCarrierNameSearchButton" type="button">...</button>
+                  <button class="sap-search-button" id="orderCarrierNameSearchButton" type="button" aria-label="Buscar transportadora por nome">...</button>
                 </span>
               </label>
               <label>Cond. de pagamento
@@ -155,17 +147,18 @@ async function renderOrders(container) {
             <input id="orderCarrierAddress" type="hidden">
             <input id="orderNotes" type="hidden">
             <div id="orderCarrierResults" class="sap-search-results">
-              <div class="empty-state compact-state">Transportadoras cadastradas aparecem aqui.</div>
+              ${CrmUi.renderState('empty', 'Nenhuma transportadora selecionada', 'Pesquise pelo codigo ou nome quando o envio exigir transportadora.')}
             </div>
           </div>
         </section>
       </div>
       <div class="sap-footer-actions">
-        <button class="btn btn-primary" id="saveOrderButton" type="button">Salvar</button>
-        <button class="btn btn-ghost" id="closeOrderButton" type="button">Fechar</button>
+        <button class="btn btn-primary" id="saveOrderButton" type="button">Salvar pedido</button>
+        <button class="btn btn-ghost" id="closeOrderButton" type="button">Cancelar</button>
         <p id="orderMessage" class="form-message"></p>
       </div>
     </section>
+    </div>
   `;
 
   bindSapTabs(container);
@@ -199,11 +192,12 @@ async function renderOrders(container) {
 
   document.getElementById('orderProductSearch').addEventListener('submit', async (event) => {
     event.preventDefault();
+    const term = document.getElementById('orderProductTerm').value.trim();
     orderSelectedProduct = null;
     updateOrderProductSelection(null);
     await searchProductsInto(document.getElementById('orderSearchResults'), {
-      termo: getOrderProductSearchTerm(),
-      grupo: document.getElementById('orderProductGroupPreview').value,
+      termo: term,
+      grupo: '',
       regiao: document.getElementById('orderRegion').value
     }, selectProductForOrder);
   });
@@ -215,10 +209,12 @@ async function renderOrders(container) {
   });
 
   document.getElementById('saveOrderButton').addEventListener('click', saveCurrentOrder);
-  document.getElementById('closeOrderButton').addEventListener('click', () => {
+  const closeOrderCreation = () => {
     if (hasUnsavedOrderDraft() && !window.confirm('Existem alteracoes nao salvas. Deseja sair?')) return;
     openModule('ordersReport');
-  });
+  };
+  document.getElementById('closeOrderButton').addEventListener('click', closeOrderCreation);
+  document.getElementById('orderFocusBackButton').addEventListener('click', closeOrderCreation);
   document.getElementById('orderAddSelectedProductButton').addEventListener('click', () => {
     if (!orderSelectedProduct) return;
     addProductToOrder(orderSelectedProduct);
@@ -242,7 +238,9 @@ async function renderOrders(container) {
 
 function applyOrderDraft(draft) {
   if (!draft) return;
-  document.getElementById('orderRegion').value = draft.regiao || 'SP';
+  document.getElementById('orderRegion').value = draft.regiao || 'PR';
+  document.getElementById('orderUsage').value = 'Revenda';
+  document.getElementById('orderBillingState').value = draft.estado || '';
   document.getElementById('orderClientSapCode').value = draft.codigo_sap_cliente || '';
   document.getElementById('orderCnpj').value = formatCnpj(draft.cnpj || '');
   document.getElementById('orderClient').value = draft.cliente || '';
@@ -256,7 +254,11 @@ function applyOrderDraft(draft) {
   orderItems = (draft.items || []).map((item) => Object.assign({}, item));
   orderCreateSaved = false;
   renderCart();
-  document.getElementById('orderMessage').textContent = 'Rascunho carregado. Revise e salve para gerar um novo pedido.';
+  const message = document.getElementById('orderMessage');
+  if (message) {
+    message.style.color = 'var(--success)';
+    message.textContent = 'Rascunho carregado. Revise e salve para gerar um novo pedido.';
+  }
 }
 
 function bindSapTabs(scope) {
@@ -266,20 +268,15 @@ function bindSapTabs(scope) {
       const tab = button.dataset.sapTab;
       const tabRoot = button.closest('.sap-tabs-section');
       tabRoot.querySelectorAll('[data-sap-tab]').forEach((item) => {
-        item.classList.toggle('is-active', item.dataset.sapTab === tab);
+        const active = item.dataset.sapTab === tab;
+        item.classList.toggle('is-active', active);
+        item.setAttribute('aria-selected', String(active));
       });
       tabRoot.querySelectorAll('[data-sap-panel]').forEach((panel) => {
         panel.hidden = panel.dataset.sapPanel !== tab;
       });
     });
   });
-}
-
-function getOrderProductSearchTerm() {
-  return [
-    document.getElementById('orderProductTerm').value,
-    document.getElementById('orderProductNamePreview').value
-  ].filter(Boolean).join(' ').trim();
 }
 
 function setOrderProductGroup(value) {
@@ -303,8 +300,10 @@ function updateOrderProductSelection(product) {
   document.getElementById('orderProductTerm').value = product.codigo || '';
   document.getElementById('orderProductNamePreview').value = product.descricao || '';
   setOrderProductGroup(product.grupo || product.linha || product.categoria || '');
-  document.getElementById('orderProductStockLine').innerHTML = 'Disp. Venda: <strong>' + escapeHtml(product.estoque || '0') + '</strong> / Pr.Unit.: <strong>' + money(Number(product.preco || 0)) + '</strong>';
-  document.getElementById('orderAddQuantity').value = 0;
+  const branchInfo = formatBranchAvailability(product, document.getElementById('orderRegion').value, 1);
+  const stockDisplay = product.estoque === null || product.estoque === undefined || product.estoque === '' ? 'Nao importado' : product.estoque;
+  document.getElementById('orderProductStockLine').innerHTML = 'Disp. Venda: <strong>' + escapeHtml(stockDisplay) + '</strong> / Pr.Unit.: <strong>' + money(Number(product.preco || 0)) + '</strong>' + (branchInfo ? '<br><small>' + escapeHtml(branchInfo) + '</small>' : '');
+  document.getElementById('orderAddQuantity').value = 1;
 }
 
 function selectProductForOrder(product) {
@@ -317,7 +316,7 @@ function clearOrderProductSelection() {
   document.getElementById('orderProductTerm').value = '';
   document.getElementById('orderProductNamePreview').value = '';
   setOrderProductGroup('');
-  document.getElementById('orderSearchResults').innerHTML = '<div class="empty-state compact-state">Pesquise para adicionar itens ao pedido.</div>';
+  document.getElementById('orderSearchResults').innerHTML = '';
   updateOrderProductSelection(null);
 }
 
@@ -338,15 +337,41 @@ function addProductToOrder(product, forcedQuantity = null) {
   if (existing) {
     existing.quantidade += quantity;
   } else {
-    orderItems.push({
+    const item = {
       codigo: product.codigo,
       descricao: product.descricao,
       marca: product.marca,
       aplicacao: product.aplicacao,
+      ncm: product.ncm || '',
+      preco_sem_imposto: Number(product.preco_sem_imposto || 0),
       preco: Number(product.preco || 0),
       quantidade: quantity,
-      desconto_percentual: 0
-    });
+      desconto_percentual: orderClientDiscountPercent,
+      branch_stock: product.branch_stock || null,
+      fiscal_status: 'CALCULANDO'
+    };
+    orderItems.push(item);
+    hydrateOrderItemCommercialPrice(item);
+  }
+  renderCart();
+}
+
+async function hydrateOrderItemCommercialPrice(item) {
+  try {
+    const origin = document.getElementById('orderRegion')?.value || 'PR';
+    const destination = document.getElementById('orderBillingState')?.value || origin;
+    const customerType = 'REVENDA';
+    const result = await supabaseGetProductCommercialPrice(item.codigo, origin, destination, customerType);
+    item.fiscal_status = result.status;
+    item.preco_sem_imposto = Number(result.base_price || 0);
+    item.tributos = Number(result.total_taxes || 0) + Number(result.total_expenses || 0);
+    item.preco = result.final_price == null ? 0 : Number(result.final_price);
+    item.fiscal_details = result;
+    item.commercial_availability = result.availability;
+    item.commercial_available_qty = result.source_display_value || result.available_qty;
+    item.fiscal_warnings = result.warnings || [];
+  } catch (error) {
+    item.fiscal_status = 'FALHA_CALCULO'; item.fiscal_warnings = [error.message || 'Falha no motor fiscal'];
   }
   renderCart();
 }
@@ -475,17 +500,15 @@ function renderCart() {
   const count = document.getElementById('cartCount');
   const totals = document.getElementById('cartTotals');
   count.textContent = orderItems.length + (orderItems.length === 1 ? ' item' : ' itens');
-  const subtotal = orderItems.reduce((sum, item) => sum + item.preco * item.quantidade, 0);
   const total = orderItems.reduce((sum, item) => sum + item.preco * item.quantidade * (1 - item.desconto_percentual / 100), 0);
-  const discount = subtotal - total;
   if (!orderItems.length) {
     list.className = 'sap-items-wrap';
-    list.innerHTML = renderSapOrderItemsTable([]);
-    totals.innerHTML = renderSapTotals(0, 0, 0);
+    list.innerHTML = '<p class="commercial-empty-items">Nenhum produto adicionado.</p>';
+    totals.innerHTML = renderCommercialTotal(0);
     return;
   }
   list.className = 'sap-items-wrap';
-  list.innerHTML = renderSapOrderItemsTable(orderItems);
+  list.innerHTML = (canRenderTransferInformation() ? renderOrderTransferSummary(orderItems) : '') + renderSapOrderItemsTable(orderItems);
   list.querySelectorAll('[data-cart-qty]').forEach((input) => {
     input.addEventListener('change', () => {
       orderItems[Number(input.dataset.cartQty)].quantidade = Math.max(1, Number(input.value || 1));
@@ -504,50 +527,65 @@ function renderCart() {
       renderCart();
     });
   });
-  totals.innerHTML = renderSapTotals(subtotal, discount, total);
+  totals.innerHTML = renderCommercialTotal(total);
 }
 
 function renderSapOrderItemsTable(items) {
-  const totalQty = items.reduce((sum, item) => sum + Number(item.quantidade || 0), 0);
-  const subtotal = items.reduce((sum, item) => sum + item.preco * item.quantidade, 0);
-  const total = items.reduce((sum, item) => sum + item.preco * item.quantidade * (1 - item.desconto_percentual / 100), 0);
   const rows = items.length ? items.map((item, index) => {
     const finalUnit = item.preco * (1 - item.desconto_percentual / 100);
     const rowTotal = finalUnit * item.quantidade;
+    const region = document.getElementById('orderRegion')?.value || 'PR';
+    const branchInfo = formatBranchAvailability(item, region, item.quantidade);
+    const transferNotice = canRenderTransferInformation() ? getBranchTransferNotice(item, region, item.quantidade) : null;
     return `
       <tr>
-        <td>${index + 1}</td>
-        <td class="sap-code">${escapeHtml(item.codigo)}</td>
-        <td>${escapeHtml(item.descricao || '')}</td>
-        <td>${escapeHtml(item.marca || '')}</td>
-        <td>${escapeHtml(item.aplicacao || '')}</td>
-        <td>UN</td>
+        <td class="commercial-item-product"><strong><span class="sap-code">${escapeHtml(item.codigo)}</span> · ${escapeHtml(item.descricao || '')}</strong>
+          <small>${escapeHtml([item.marca,item.aplicacao].filter(Boolean).join(' · '))}</small>
+          <small>Estoque ${escapeHtml(item.commercial_availability || '—')} ${escapeHtml(item.commercial_available_qty || '')}</small>
+          ${transferNotice ? `<small class="commercial-transfer-warning is-${escapeHtml(transferNotice.level)}">&#9888; ${escapeHtml(transferNotice.message)}</small>` : ''}
+          <details class="commercial-item-details">
+            <summary>Preco e impostos</summary>
+            ${branchInfo ? '<small>' + escapeHtml(branchInfo) + '</small>' : ''}
+            <small>Base ${money(item.preco_sem_imposto || 0)} · Tributos ${money(item.tributos || 0)}</small>
+            <small class="fiscal-breakdown">${escapeHtml(formatFiscalBreakdown(item.fiscal_details))}</small>
+            <small class="fiscal-inline-status">${escapeHtml(formatFiscalStatus(item.fiscal_status))}</small>
+            ${item.fiscal_warnings?.length ? `<small class="fiscal-warning">${escapeHtml(formatFiscalWarnings(item.fiscal_warnings))}</small>` : ''}
+          </details></td>
         <td><input type="number" min="1" value="${escapeHtml(item.quantidade)}" data-cart-qty="${index}"></td>
         <td>${money(item.preco)}</td>
         <td><input type="number" min="0" step="0.01" value="${escapeHtml(item.desconto_percentual)}" data-cart-discount="${index}"></td>
-        <td>${money(finalUnit)}</td>
         <td>${money(rowTotal)}</td>
-        <td>${money(rowTotal)}</td>
-        <td><button class="sap-remove-button" type="button" data-cart-remove="${index}" title="Remover">-</button></td>
+        <td><button class="sap-remove-button" type="button" data-cart-remove="${index}" title="Remover" aria-label="Remover ${escapeHtml(item.codigo)}">×</button></td>
       </tr>
     `;
-  }).join('') : '<tr><td colspan="13" class="sap-empty-row">Nenhum item adicionado.</td></tr>';
+  }).join('') : '<tr><td colspan="6" class="sap-empty-row">Nenhum produto adicionado ainda.</td></tr>';
   return `
     <table class="sap-items-table">
       <thead>
         <tr>
-          <th>#</th><th>Cod.</th><th>Descricao</th><th>Marca</th><th>Aplicacao</th><th>UM</th><th>Qtde</th>
-          <th>Pr.Unit.</th><th>% do desc.</th><th>Pr.Apos Desc.</th><th>Total Apos Desc.</th><th>Total c/ Imp.</th><th></th>
+          <th>Produto</th><th>Qtde</th><th>Preco</th><th>Desc. %</th><th>Total</th><th></th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
-      <tfoot>
-        <tr>
-          <td colspan="6">Totais:</td><td>${totalQty}</td><td></td><td></td><td></td><td>${money(total)}</td><td>${money(subtotal)}</td><td></td>
-        </tr>
-      </tfoot>
     </table>
   `;
+}
+
+function renderOrderTransferSummary(items) {
+  const region = document.getElementById('orderRegion')?.value || 'PR';
+  const notices = items.map((item) => ({ item, notice: getBranchTransferNotice(item, region, item.quantidade) }))
+    .filter((entry) => entry.notice);
+  if (!notices.length) return '';
+  return `
+    <section class="commercial-transfer-summary" aria-live="polite">
+      <strong>Verificacao de estoque SP / PR</strong>
+      ${notices.map(({ item, notice }) => `<p class="is-${escapeHtml(notice.level)}"><span>${escapeHtml(item.codigo)}</span> ${escapeHtml(notice.message)}</p>`).join('')}
+    </section>
+  `;
+}
+
+function renderCommercialTotal(total) {
+  return `<div class="commercial-grand-total"><span>Total</span><strong>${money(total)}</strong></div>`;
 }
 
 function renderSapTotals(subtotal, discount, total) {
@@ -559,9 +597,9 @@ function renderSapTotals(subtotal, discount, total) {
   `;
 }
 
-function validateCommercialDocument(payload, label) {
+function validateCommercialDocument(payload, label, options = {}) {
   const docLabel = label || 'documento';
-  if (!String(payload.cliente || '').trim()) {
+  if (!options.allowAnonymous && !String(payload.cliente || '').trim()) {
     throw new Error('Informe o cliente antes de salvar ' + docLabel + '.');
   }
   if (!Array.isArray(payload.items) || !payload.items.length) {
@@ -585,6 +623,8 @@ async function saveCurrentOrder() {
     const payload = {
       sessionId: getSessionId(),
       regiao: document.getElementById('orderRegion').value,
+      cliente_estado: document.getElementById('orderBillingState').value,
+      customer_type: 'REVENDA',
       codigo_sap_cliente: document.getElementById('orderClientSapCode').value,
       cliente: document.getElementById('orderClient').value,
       cnpj: document.getElementById('orderCnpj').value,
@@ -608,15 +648,45 @@ async function saveCurrentOrder() {
     orderItems = [];
     orderCreateSaved = true;
     renderCart();
-    message.style.color = 'var(--success)';
-    message.textContent = 'Pedido ' + data.numero_pedido + ' salvo com sucesso. Documentos podem ser gerados em uma etapa separada.';
+    const transferSummary = canRenderTransferInformation() ? (data.transferencias || {}) : {};
+    const transferCount = Number(transferSummary.created || 0) + Number(transferSummary.updated || 0);
+    const transferWarnings = Array.isArray(transferSummary.warnings) ? transferSummary.warnings : [];
+    message.style.color = transferWarnings.length ? 'var(--warning)' : 'var(--success)';
+    message.textContent = 'Pedido ' + data.numero_pedido + ' salvo com sucesso. Documentos podem ser gerados em uma etapa separada.'
+      + formatFiscalSaveSummary(data.fiscal)
+      + (transferCount > 0 ? ' Solicitacao de transferencia PR -> SP criada para ' + transferCount + (transferCount === 1 ? ' item.' : ' itens.') : '')
+      + formatOrderTransferWarnings(transferWarnings);
   } catch (error) {
     message.style.color = 'var(--accent)';
     message.textContent = error.message;
   } finally {
     button.disabled = false;
-    button.textContent = 'Salvar';
+    button.textContent = 'Salvar pedido';
   }
+}
+
+function formatOrderTransferWarnings(warnings) {
+  const rows = Array.isArray(warnings) ? warnings : [];
+  if (!rows.length) return '';
+  const labels = {
+    ESTOQUE_SP_NAO_IMPORTADO: 'Estoque SP nao importado; transferencia automatica nao gerada',
+    ESTOQUE_PR_NAO_IMPORTADO: 'Estoque PR nao importado; transferencia automatica nao gerada',
+    ESTOQUE_PR_INDISPONIVEL: 'Sem saldo PR para transferencia',
+    TRANSFERENCIA_PARCIAL: 'Saldo PR atende somente parte da transferencia'
+  };
+  return ' Avisos: ' + rows.map((row) => (labels[row.code] || row.code) + (row.product_code ? ' (' + row.product_code + ')' : '')).join('; ') + '.';
+}
+
+function formatFiscalSaveSummary(fiscal) {
+  if (!fiscal) return '';
+  const calculated = Number(fiscal.calculated || 0);
+  const missingNcm = Number(fiscal.missing_ncm || 0);
+  const missingRule = Number(fiscal.missing_rule || 0);
+  if (!calculated && !missingNcm && !missingRule) return ' Fiscal: preco legado.';
+  return ' Fiscal: ' + calculated + ' item(ns) calculado(s)'
+    + (missingNcm ? ', ' + missingNcm + ' sem NCM' : '')
+    + (missingRule ? ', ' + missingRule + ' sem regra' : '')
+    + '.';
 }
 
 function hasUnsavedOrderDraft() {
@@ -696,6 +766,7 @@ function scheduleOrderClientAutoSearch(event) {
 
 async function searchCadastrosForOrder(options = {}) {
   const target = document.getElementById('orderCadastroResults');
+  target.hidden = false;
   const term = options.term !== undefined ? options.term : getOrderClientSearchTerm();
   if (!isClientLookupReady(term)) {
     target.innerHTML = '<div class="empty-state compact-state">Digite pelo menos 3 caracteres ou CNPJ/codigo para buscar.</div>';
@@ -707,7 +778,6 @@ async function searchCadastrosForOrder(options = {}) {
     const exact = findExactClientMatch(rows, term);
     if (exact) {
       applyCadastroToOrder(exact);
-      target.innerHTML = '<div class="empty-state compact-state">Cliente encontrado e carregado automaticamente.</div>';
       return;
     }
     target.innerHTML = renderOrderCadastrosResults(rows);
@@ -753,16 +823,37 @@ function renderOrderCadastrosResults(rows) {
 }
 
 function applyCadastroToOrder(row) {
+  const clientName = row.razao_social || row.nome_fantasia || '';
   document.getElementById('orderClientSapCode').value = row.codigo_sap_cliente || '';
-  document.getElementById('orderClient').value = row.razao_social || row.nome_fantasia || '';
+  document.getElementById('orderClient').value = clientName;
+  document.getElementById('orderCadastroSearch').value = clientName;
   document.getElementById('orderCnpj').value = formatCnpj(row.cnpj || '');
   document.getElementById('orderPhone').value = row.whatsapp || row.telefone || '';
   document.getElementById('orderAddress').value = formatCadastroAddress(row);
+  document.getElementById('orderCadastroResults').hidden = true;
   document.getElementById('orderTerm').value = row.prazo_desejado || '';
   document.getElementById('orderCarrier').value = row.transportadora || '';
+  orderClientDiscountPercent = Math.max(0, Number(row.commercial_discount_percent || 0));
+  orderItems.forEach((item) => { item.desconto_percentual = orderClientDiscountPercent; });
+  const billingChanged = applyBillingRegionToOrder(row.estado);
+  renderCart();
   const message = document.getElementById('orderMessage');
   message.style.color = 'var(--success)';
-  message.textContent = 'Cadastro ' + (row.protocolo || '') + ' carregado no pedido.';
+  message.textContent = 'Cadastro ' + (row.protocolo || '') + ' carregado no pedido. Desconto padrao: ' + orderClientDiscountPercent.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + '%. Faturamento: ' + getBillingBranchLabel(document.getElementById('orderRegion').value) + '.' + (billingChanged ? ' Itens removidos para recalcular valores.' : '');
+}
+
+function applyBillingRegionToOrder(uf) {
+  const regionSelect = document.getElementById('orderRegion');
+  const stateInput = document.getElementById('orderBillingState');
+  const nextRegion = getBillingRegionForUf(uf, regionSelect.value);
+  const changed = regionSelect.value !== nextRegion;
+  stateInput.value = normalizeBillingUf(uf);
+  regionSelect.value = nextRegion;
+  if (changed && orderItems.length) {
+    orderItems = [];
+    renderCart();
+  }
+  return changed;
 }
 
 async function searchCarriersForOrder() {
@@ -844,25 +935,16 @@ async function renderSapImport(container) {
             <option value="CATALOGO_PESQUISA">Catalogo pesquisa</option>
           </select>
         </label>
-        <label class="span-4">Filial/Estado
-          <select id="importRegion">
-            <option value="SP" selected>SP - Filial</option>
-            <option value="PR">PR - Matriz</option>
-          </select>
-        </label>
-        <label class="span-4">Arquivo
+        <label class="span-8">Arquivo
           <input id="importFile" type="file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values">
         </label>
         <label class="span-12">Tabela colada
           <textarea id="importText" placeholder="CODIGO IPS;DESCRICAO;MARCA;APLICACAO;ANO;IPI;PRECO S/IMP;PRECO C/IMP;ESTOQUE"></textarea>
         </label>
-        <label class="span-12">Arquivo/Texto do Portal para conferencia
-          <textarea id="importPortalText" placeholder="Opcional: cole a lista do Portal para comparar codigos, precos, estoque e descricao"></textarea>
-        </label>
       </div>
       <div class="actions-row">
         <button class="btn btn-primary" id="previewImportButton" type="button">Verificar dados</button>
-        <button class="btn btn-secondary" id="applyImportButton" type="button" disabled>Revisar/aprovar</button>
+        <button class="btn btn-secondary" id="applyImportButton" type="button" disabled>Importar</button>
         <button class="btn btn-ghost" id="saveImportTemplateButton" type="button">Salvar padrão</button>
         <button class="btn btn-ghost" id="resetImportTemplateButton" type="button">Resetar modelo</button>
         <button class="btn btn-ghost" id="clearImportButton" type="button">Limpar</button>
@@ -945,22 +1027,15 @@ async function renderSapImport(container) {
       document.getElementById('importMapping').innerHTML = renderImportMapping(finalAnalysis, templateMatch);
       currentImportPlan = await supabasePreviewImportProducts({
         tipo: document.getElementById('importType').value,
-        region: document.getElementById('importRegion').value,
         texto: text,
-        fileName: document.getElementById('importFile').files && document.getElementById('importFile').files[0]
-          ? document.getElementById('importFile').files[0].name
-          : null,
-        portalTexto: document.getElementById('importPortalText').value,
         mapping: getCurrentImportMapping()
       });
       preview.innerHTML = renderImportPreview(currentImportPlan, { automatic: true, templateMatch });
-      const ready = !Number(currentImportPlan.errorCount || 0);
-      applyButton.textContent = 'Revisar/aprovar';
-      message.style.color = ready ? 'var(--success)' : 'var(--accent)';
-      message.textContent = ready
-        ? (Number(currentImportPlan.warningCount || 0) ? 'Existem alertas para conferencia, mas a importacao pode continuar.' : 'Nenhum erro encontrado. Importacao pronta para aprovacao.')
-        : 'Importacao bloqueada: existem erros que precisam ser corrigidos.';
-      applyButton.disabled = !ready;
+      message.style.color = 'var(--success)';
+      message.textContent = templateMatch.useTemplate
+        ? 'Modelo aprendido aplicado. Confira a previa e clique em Importar.'
+        : 'Analise pronta. Confira a previa reorganizada e clique em Importar.';
+      applyButton.disabled = false;
     } catch (error) {
       currentImportPlan = null;
       preview.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
@@ -981,22 +1056,13 @@ async function renderSapImport(container) {
     const text = document.getElementById('importText').value;
     currentImportPlan = await supabasePreviewImportProducts({
       tipo: document.getElementById('importType').value,
-      region: document.getElementById('importRegion').value,
       texto: text,
-      fileName: document.getElementById('importFile').files && document.getElementById('importFile').files[0]
-        ? document.getElementById('importFile').files[0].name
-        : null,
-      portalTexto: document.getElementById('importPortalText').value,
       mapping: getCurrentImportMapping()
     });
     preview.innerHTML = renderImportPreview(currentImportPlan, { automatic });
-    const ready = !Number(currentImportPlan.errorCount || 0);
-    applyButton.textContent = 'Revisar/aprovar';
-    message.style.color = ready ? 'var(--success)' : 'var(--accent)';
-    message.textContent = ready
-      ? (Number(currentImportPlan.warningCount || 0) ? 'Existem alertas para conferencia, mas a importacao pode continuar.' : messageText)
-      : 'Importacao bloqueada: existem erros que precisam ser corrigidos.';
-    applyButton.disabled = !ready;
+    message.style.color = 'var(--success)';
+    message.textContent = messageText;
+    applyButton.disabled = false;
   };
 
   document.getElementById('importFile').addEventListener('change', async (event) => {
@@ -1015,13 +1081,6 @@ async function renderSapImport(container) {
     scheduleImportAnalysis();
   });
 
-  document.getElementById('importPortalText').addEventListener('input', () => {
-    currentImportPlan = null;
-    document.getElementById('applyImportButton').disabled = true;
-    document.getElementById('importPreview').innerHTML = '<div class="empty-state">Aguardando comparacao com Portal...</div>';
-    scheduleImportAnalysis();
-  });
-
   document.getElementById('importType').addEventListener('change', () => {
     currentImportPlan = null;
     document.getElementById('applyImportButton').disabled = true;
@@ -1029,12 +1088,6 @@ async function renderSapImport(container) {
     refreshImportMapping();
     document.getElementById('importPreview').innerHTML = '<div class="empty-state">Tipo alterado. Recalculando previa...</div>';
     scheduleImportAnalysis();
-  });
-
-  document.getElementById('importRegion').addEventListener('change', () => {
-    currentImportPlan = null;
-    document.getElementById('applyImportButton').disabled = true;
-    document.getElementById('importPreview').innerHTML = '<div class="empty-state">Filial alterada. Recalcule a previa antes de importar.</div>';
   });
 
   document.getElementById('importMapping').addEventListener('change', (event) => {
@@ -1076,68 +1129,6 @@ async function renderSapImport(container) {
     }
   });
 
-  document.getElementById('importPreview').addEventListener('click', async (event) => {
-    const action = event.target.dataset.importApprovalAction;
-    if (!action) return;
-    const message = document.getElementById('importMessage');
-    const preview = document.getElementById('importPreview');
-    const mainButton = document.getElementById('applyImportButton');
-    if (!currentImportPlan) return;
-
-    if (action === 'back') {
-      preview.innerHTML = renderImportPreview(currentImportPlan);
-      mainButton.disabled = Number(currentImportPlan.errorCount || 0) > 0;
-      mainButton.textContent = 'Revisar/aprovar';
-      message.textContent = 'Previa restaurada.';
-      message.style.color = 'var(--muted)';
-      return;
-    }
-
-    if (action === 'approve') {
-      const button = event.target;
-      button.disabled = true;
-      message.style.color = 'var(--muted)';
-      message.textContent = 'Aprovando lote para importacao definitiva...';
-      try {
-        saveCurrentImportMappingTemplate();
-        currentImportPlan = await supabaseApproveProductsImport({ batchId: currentImportPlan.batchId });
-        preview.innerHTML = renderImportApproval(currentImportPlan);
-        message.style.color = 'var(--success)';
-        message.textContent = 'Lote aprovado. Agora voce pode importar definitivamente.';
-      } catch (error) {
-        button.disabled = false;
-        message.style.color = 'var(--accent)';
-        message.textContent = error.message;
-      }
-      return;
-    }
-
-    if (action === 'commit') {
-      const button = event.target;
-      button.disabled = true;
-      message.style.color = 'var(--muted)';
-      message.textContent = 'Importando lote aprovado...';
-      try {
-        const data = await supabaseImportProducts({
-          batchId: currentImportPlan.batchId,
-          onProgress: () => {
-            message.textContent = 'Importando lote aprovado...';
-          }
-        });
-        message.style.color = 'var(--success)';
-        message.textContent = 'Importacao aplicada com sucesso.';
-        preview.innerHTML = renderImportResult(data.summary || data);
-        currentImportPlan = null;
-        mainButton.disabled = true;
-        mainButton.textContent = 'Revisar/aprovar';
-      } catch (error) {
-        button.disabled = false;
-        message.style.color = 'var(--accent)';
-        message.textContent = error.message;
-      }
-    }
-  });
-
   document.getElementById('saveImportTemplateButton').addEventListener('click', () => {
     const message = document.getElementById('importMessage');
     try {
@@ -1161,7 +1152,6 @@ async function renderSapImport(container) {
   document.getElementById('clearImportButton').addEventListener('click', () => {
     currentImportPlan = null;
     document.getElementById('importText').value = '';
-    document.getElementById('importPortalText').value = '';
     document.getElementById('importFile').value = '';
     document.getElementById('applyImportButton').disabled = true;
     document.getElementById('importMessage').textContent = '';
@@ -1202,14 +1192,28 @@ async function renderSapImport(container) {
     }
     button.disabled = true;
     message.style.color = 'var(--muted)';
-    if (Number(currentImportPlan.errorCount || 0)) {
+    message.textContent = 'Importando 0 de ' + currentImportPlan.validRows + ' produtos...';
+    try {
+      const file = document.getElementById('importFile').files && document.getElementById('importFile').files[0];
+      saveCurrentImportMappingTemplate();
+      const data = await supabaseImportProducts({
+        tipo: document.getElementById('importType').value,
+        texto: document.getElementById('importText').value,
+        fileName: file ? file.name : null,
+        mapping: getCurrentImportMapping(),
+        onProgress: (progress) => {
+          message.textContent = 'Importando lote ' + progress.batch + ' de ' + progress.batches + ' - ' + progress.done + ' de ' + progress.total + ' produtos...';
+        }
+      });
+      message.style.color = 'var(--success)';
+      message.textContent = 'Importacao aplicada com sucesso.';
+      preview.innerHTML = renderImportResult(data.summary);
+      currentImportPlan = null;
+    } catch (error) {
       message.style.color = 'var(--accent)';
-      message.textContent = 'Importacao bloqueada: existem erros que precisam ser corrigidos.';
-      return;
+      message.textContent = error.message;
+      button.disabled = false;
     }
-    preview.innerHTML = renderImportApproval(currentImportPlan);
-    message.textContent = 'Revise o resumo, alertas e amostra antes de aprovar.';
-    button.textContent = 'Revisao aberta';
   });
 }
 
@@ -1221,6 +1225,7 @@ function getImportFieldOptions() {
     ['marca', 'Marca'],
     ['aplicacao', 'Aplicacao'],
     ['ano', 'Ano'],
+    ['ncm', 'NCM'],
     ['ipi', 'IPI'],
     ['preco_sem_imposto', 'Preco s/ imposto'],
     ['preco_referencia', 'Preco c/ imposto ref.'],
@@ -1228,6 +1233,7 @@ function getImportFieldOptions() {
     ['preco_pr', 'Preco PR'],
     ['estoque', 'Estoque'],
     ['status_estoque', 'Status estoque'],
+    ['url_imagem', 'URL imagem'],
     ['grupo', 'Grupo'],
     ['categoria', 'Categoria'],
     ['montadora', 'Montadora'],
@@ -1415,10 +1421,10 @@ function getImportTemplate(type) {
     CATALOGO_PESQUISA: {
       title: 'Catalogo de pesquisa',
       required: ['codigo'],
-      optional: ['linha', 'grupo', 'veiculos', 'detalhes', 'similares'],
-      sample: 'CODIGO;LINHA;GRUPO;VEICULOS;DETALHES;SIMILARES\n7146505811;DIRECAO;BOMBA;PALIO E-TORQ 11/20;BOMBA DIR.HIDRAULICA;7146505810',
+      optional: ['linha', 'grupo', 'veiculos', 'detalhes', 'similares', 'ncm', 'url imagem'],
+      sample: 'CODIGO;LINHA;GRUPO;VEICULOS;DETALHES;SIMILARES;NCM;URL IMAGEM\n7146505811;DIRECAO;BOMBA;PALIO E-TORQ 11/20;BOMBA DIR.HIDRAULICA;7146505810;87089990;https://exemplo.com/7146505811.jpg',
       notes: [
-        'Enriquece a busca e a listagem de produtos com linha, grupo, veiculos, detalhes e similares.',
+        'Enriquece a busca e a listagem de produtos com linha, grupo, veiculos, detalhes, similares, NCM e imagem.',
         'Nao altera estoque nem valor. Esses campos continuam vindo das importacoes de estoque e preco.'
       ]
     },
@@ -1467,16 +1473,7 @@ function renderImportTemplate(type) {
 
 function renderImportPreview(plan, options = {}) {
   const invalid = plan.invalidRows.length
-    ? `<div class="import-warnings"><strong>${plan.invalidRows.length} erros bloqueantes</strong><span>${plan.invalidRows.slice(0, 8).map((row) => `Linha ${row.linha}: ${escapeHtml(row.motivo)}`).join(' | ')}</span></div>`
-    : '';
-  const warnings = plan.warningRows && plan.warningRows.length
-    ? `<div class="import-warnings"><strong>${plan.warningRows.length} linhas com alertas</strong><span>${plan.warningRows.slice(0, 8).map((row) => `Linha ${row.linha}: ${escapeHtml(row.motivo)}`).join(' | ')}</span></div>`
-    : '';
-  const portalWarnings = plan.portalWarnings && plan.portalWarnings.length
-    ? `<div class="import-warnings"><strong>${plan.portalWarnings.length} alertas do Portal</strong><span>${plan.portalWarnings.slice(0, 8).map(escapeHtml).join(' | ')}</span></div>`
-    : '';
-  const differences = plan.differences && plan.differences.length
-    ? `<div class="import-warnings"><strong>${plan.differences.length} diferencas para conferir</strong><span>${plan.differences.slice(0, 8).map((row) => `${escapeHtml(row.codigo || '')}: ${escapeHtml((row.warnings || []).join(', '))}`).join(' | ')}</span></div>`
+    ? `<div class="import-warnings"><strong>${plan.invalidRows.length} linhas ignoradas</strong><span>${plan.invalidRows.slice(0, 5).map((row) => `Linha ${row.linha}: ${escapeHtml(row.motivo)}`).join(' | ')}</span></div>`
     : '';
   const duplicates = plan.duplicates
     ? `<div class="import-warnings"><strong>${plan.duplicates} codigos repetidos</strong><span>O sistema junta as linhas do mesmo codigo: o ultimo valor preenchido vence e campos vazios nao apagam dados anteriores. ${escapeHtml((plan.duplicateCodes || []).slice(0, 8).join(', '))}</span></div>`
@@ -1507,90 +1504,24 @@ function renderImportPreview(plan, options = {}) {
       <article><span>Unicos</span><strong>${plan.uniqueRows}</strong></article>
       <article><span>Novos</span><strong>${plan.newCount}</strong></article>
       <article><span>Atualizacoes</span><strong>${plan.existingCount}</strong></article>
-      <article><span>Erros</span><strong>${plan.errorCount || plan.invalidRows.length || 0}</strong></article>
-      <article><span>Ignorados</span><strong>${plan.ignoredCount || 0}</strong></article>
-      <article><span>Alertas</span><strong>${plan.warningCount || 0}</strong></article>
-      <article><span>Preco alterado</span><strong>${plan.priceChanged || 0}</strong></article>
-      <article><span>Estoque alterado</span><strong>${plan.stockChanged || 0}</strong></article>
-      <article><span>Descricao alterada</span><strong>${plan.descriptionChanged || 0}</strong></article>
+      <article><span>Duplicados</span><strong>${plan.duplicates}</strong></article>
     </div>
     ${templateAlert}
     ${auto}
     ${fields}
     ${duplicates}
     ${invalid}
-    ${warnings}
-    ${portalWarnings}
-    ${differences}
     ${renderImportTable(plan.preview)}
-  `;
-}
-
-function renderImportApproval(plan) {
-  const approved = String(plan.status || '').toLowerCase() === 'approved';
-  const imported = ['imported', 'committed'].includes(String(plan.status || '').toLowerCase());
-  const blocked = Number(plan.errorCount || 0) > 0;
-  const statusLabel = approved ? 'Aprovado' : imported ? 'Importado' : blocked ? 'Bloqueado' : 'Validado';
-  const warningText = Number(plan.warningCount || 0)
-    ? `${plan.warningCount} alerta(s) serao aceitos ao aprovar este lote.`
-    : 'Nenhum alerta pendente.';
-  const errorText = blocked
-    ? `<div class="import-warnings"><strong>Lote bloqueado</strong><span>Existem erros criticos. Corrija a planilha e gere uma nova previa.</span></div>`
-    : '';
-
-  return `
-    <div class="panel-header">
-      <div>
-        <h2>Revisao e aprovacao do lote</h2>
-        <p>Confira os totais antes de gravar os produtos definitivamente.</p>
-      </div>
-      <div class="status-pill">${escapeHtml(statusLabel)}</div>
-    </div>
-    <div class="import-summary">
-      <article><span>Linhas</span><strong>${plan.totalRows}</strong></article>
-      <article><span>Validas</span><strong>${plan.validRows}</strong></article>
-      <article><span>Novos</span><strong>${plan.newCount}</strong></article>
-      <article><span>Atualizacoes</span><strong>${plan.existingCount}</strong></article>
-      <article><span>Erros</span><strong>${plan.errorCount || 0}</strong></article>
-      <article><span>Ignorados</span><strong>${plan.ignoredCount || 0}</strong></article>
-      <article><span>Alertas</span><strong>${plan.warningCount || 0}</strong></article>
-      <article><span>Status</span><strong>${escapeHtml(plan.status || 'validated')}</strong></article>
-    </div>
-    ${errorText}
-    <div class="import-warnings">
-      <strong>Conferencia obrigatoria</strong>
-      <span>${escapeHtml(warningText)} Depois de importar, as alteracoes serao registradas na auditoria do lote.</span>
-    </div>
-    ${plan.warningRows && plan.warningRows.length ? `
-      <div class="import-warnings">
-        <strong>Principais alertas</strong>
-        <span>${plan.warningRows.slice(0, 10).map((row) => `Linha ${row.linha}: ${escapeHtml(row.motivo)}`).join(' | ')}</span>
-      </div>
-    ` : ''}
-    ${plan.differences && plan.differences.length ? `
-      <div class="import-warnings">
-        <strong>Diferencas para auditar</strong>
-        <span>${plan.differences.slice(0, 10).map((row) => `${escapeHtml(row.codigo || '')}: ${escapeHtml((row.warnings || []).join(', '))}`).join(' | ')}</span>
-      </div>
-    ` : ''}
-    ${renderImportTable(plan.preview)}
-    <div class="actions-row">
-      <button class="btn btn-ghost" type="button" data-import-approval-action="back">Voltar para previa</button>
-      <button class="btn btn-secondary" type="button" data-import-approval-action="approve"${approved || blocked || imported ? ' disabled' : ''}>Aprovar lote</button>
-      <button class="btn btn-primary" type="button" data-import-approval-action="commit"${approved ? '' : ' disabled'}>Importar definitivo</button>
-    </div>
   `;
 }
 
 function renderImportResult(summary) {
   return `
     <div class="import-summary">
-      <article><span>Recebidos</span><strong>${summary.totalRows || summary.total_recebido || 0}</strong></article>
-      <article><span>Validos</span><strong>${summary.validRows || 0}</strong></article>
-      <article><span>Novos</span><strong>${summary.newCount || summary.novos || 0}</strong></article>
-      <article><span>Atualizados</span><strong>${summary.updatedCount || summary.atualizados || 0}</strong></article>
-      <article><span>Ignorados</span><strong>${summary.ignoredCount || summary.invalidRows || 0}</strong></article>
-      <article><span>Status</span><strong>${escapeHtml(summary.status || 'importado')}</strong></article>
+      <article><span>Recebidos</span><strong>${summary.total_recebido}</strong></article>
+      <article><span>Novos</span><strong>${summary.novos}</strong></article>
+      <article><span>Atualizados</span><strong>${summary.atualizados}</strong></article>
+      <article><span>Ignorados</span><strong>${summary.erros}</strong></article>
     </div>
   `;
 }

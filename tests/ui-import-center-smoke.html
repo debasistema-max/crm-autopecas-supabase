@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Smoke UI — Central de Importações</title>
+  <link rel="stylesheet" href="../css/theme.css">
+  <link rel="stylesheet" href="../css/app.css">
+</head>
+<body class="app-page">
+  <output id="smokeAssertions" hidden></output>
+  <main class="content" id="smokeTarget"></main>
+  <script src="../js/vendor/xlsx.full.min.js?v=0.20.3" onload="document.documentElement.dataset.xlsxScript='loaded'" onerror="document.documentElement.dataset.xlsxScript='error'"></script>
+  <script src="../js/utils/format.js"></script>
+  <script src="../js/components/ui.js"></script>
+  <script src="../js/supabase_store.js"></script>
+  <script src="../js/imports.js"></script>
+  <script>
+    const importMappingAssertions = {
+      xlsxLoaded: typeof XLSX !== 'undefined' && XLSX.version === '0.20.3',
+      commercialPrice: suggestSapField('PREÇO S/IMP') === 'base_price',
+      authorizedPending: suggestSapField('Qtd. Auth. Pend.') === 'authorized_pending_qty',
+      sapItemCode: suggestSapField('Nº do item') === 'product_code',
+      duplicateCest: suggestSapField('Código CEST [2]') === 'cest',
+      fiscalIcmsDestination: suggestSapField('% ICMS Dest') === 'internal_icms_rate',
+      excelDateIso: sapCellText(new Date(Date.UTC(2015, 3, 9))) === '2015-04-09'
+    };
+    if (Object.values(importMappingAssertions).some((passed) => !passed)) {
+      throw new Error(`Falha no mapeamento SAP: ${JSON.stringify(importMappingAssertions)}`);
+    }
+    document.getElementById('smokeAssertions').value = JSON.stringify(importMappingAssertions);
+    renderImportCenter(document.getElementById('smokeTarget'));
+  </script>
+</body>
+</html>

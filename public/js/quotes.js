@@ -3,84 +3,77 @@ let quoteClientSearchTimer = null;
 let quoteSelectedProduct = null;
 let quoteImportPreviewItems = [];
 let quoteCreateSaved = false;
+let quoteClientDiscountPercent = 0;
+
+function canRenderReportTransferInformation() {
+  return typeof canCurrentUserAccessTransfers !== 'function' || canCurrentUserAccessTransfers();
+}
 
 async function renderCreateQuotation(container) {
+  if (typeof setCommercialFocusMode === 'function') setCommercialFocusMode(true);
   quoteItems = [];
   quoteSelectedProduct = null;
   quoteCreateSaved = false;
+  quoteClientDiscountPercent = 0;
   const companySettings = await loadCompanySettings();
   const branchLabel = formatCompanyBranchLabel(companySettings);
   container.innerHTML = `
-    <section class="sap-document">
-      <div class="sap-titlebar">
-        <div class="sap-title"><span class="sap-title-icon">#</span><h2>Cotacao de venda</h2></div>
-        <strong>No. Novo</strong>
-      </div>
+    <div class="module-page commercial-operation-page">
+      <header class="commercial-focus-header">
+        <button class="btn btn-ghost" id="quoteFocusBackButton" type="button" aria-label="Voltar para cotacoes">← Voltar</button>
+        <strong>Nova cotacao</strong>
+      </header>
+    <section class="sap-document commercial-document" data-document-kind="quotation">
       <div class="sap-window">
-        <section class="sap-section">
-          <h3>Dados gerais</h3>
-          <div class="sap-form-grid">
-            <div class="sap-form-left">
-              <label>Filial
-                <select id="quoteBranch"><option>${escapeHtml(branchLabel)}</option></select>
-              </label>
-              <div class="sap-inline-fields">
-                <label>Cliente | CPF/CNPJ
-                  <input id="quoteClientSapCode" type="text" placeholder="Codigo SAP">
-                </label>
-                <button class="sap-mini-button" id="quoteClientSearchButton" type="button" title="Buscar cliente">&#128269;</button>
-                <label>
-                  <input id="quoteCnpj" type="text" placeholder="CNPJ">
-                </label>
-              </div>
-              <label>Nome cliente<input id="quoteClient" type="text"></label>
-              <label>Buscar cliente
-                <span class="sap-search-field">
-                  <input id="quoteClientSearch" type="search" placeholder="Codigo SAP, CNPJ, protocolo ou empresa">
-                  <button class="sap-search-button" id="quoteClientSearchSubmitButton" type="button" title="Buscar cliente">&#128269;</button>
-                </span>
-              </label>
-              <label>Pessoa de contato<input id="quotePhone" type="text"></label>
-              <label>No Ref.Cli.<input id="quoteClientRef" type="text"></label>
-              <label>Vendedor<input id="quoteSellerDisplay" type="text" value="${escapeHtml((getStoredSession() || {}).nome || '')}"></label>
-              <label>Utilizacao principal<select id="quoteUsage"><option>Revenda</option><option>Consumo</option></select></label>
-              <label>Deposito<select id="quoteRegion"><option value="SP">02 - FILIAL - SP</option><option value="PR">01 - MATRIZ - PR</option></select></label>
+        <section class="sap-section sap-general-section">
+          <div class="commercial-context-grid">
+            <label class="commercial-client-search">Buscar cliente
+              <span class="sap-search-field">
+                <input id="quoteClientSearch" type="search" placeholder="Nome, CNPJ ou codigo SAP" autocomplete="off">
+                <button class="sap-search-button" id="quoteClientSearchSubmitButton" type="button" title="Buscar cliente" aria-label="Buscar cliente">&#128269;</button>
+              </span>
+            </label>
+            <label class="commercial-anonymous-client"><input id="quoteAnonymousClient" type="checkbox"> Gerar cotacao sem dados do cliente</label>
+            <label>Filial de faturamento<select id="quoteRegion"><option value="PR">Matriz PR</option><option value="SP">Filial SP</option></select></label>
+            <input id="quoteUsage" type="hidden" value="Revenda">
+          </div>
+          <input id="quoteBillingState" type="hidden">
+          <details class="commercial-more-fields">
+            <summary>Dados complementares</summary>
+            <div class="commercial-more-grid">
+              <label>Cliente<input id="quoteClient" type="text"></label>
+              <label>Codigo SAP<input id="quoteClientSapCode" type="text"></label>
+              <label>CNPJ<input id="quoteCnpj" type="text"></label>
+              <label>Contato<input id="quotePhone" type="text"></label>
+              <label>Referencia do cliente<input id="quoteClientRef" type="text"></label>
               <label>Endereco<input id="quoteAddress" type="text"></label>
-            </div>
-            <div class="sap-form-right">
-              <label>Status SAP<input type="text" value="Aberto" readonly></label>
-              <label>Dt.Cotacao<input type="text" value="${formatDateInput(new Date())}" readonly></label>
               <label>Valido ate<input type="date" id="quoteValidUntil"></label>
-              <label>Autorizacao SAP<input type="text" value="Sem status" readonly></label>
-              <label>Autorizacao portal<input type="text" value="Sem status" readonly></label>
+              <label>Vendedor<input id="quoteSellerDisplay" type="text" value="${escapeHtml((getStoredSession() || {}).nome || '')}" readonly></label>
+              <label>Unidade do sistema<select id="quoteBranch"><option>${escapeHtml(branchLabel)}</option></select></label>
+              <button class="btn btn-secondary" id="quoteClientSearchButton" type="button">Buscar pelos dados informados</button>
             </div>
-          </div>
-          <div id="quoteClientResults" class="sap-search-results">
-            <div class="empty-state compact-state">Clientes aparecem aqui para preencher a cotacao.</div>
-          </div>
+          </details>
+          <div id="quoteClientResults" class="sap-search-results" hidden></div>
         </section>
 
         <section class="sap-section sap-tabs-section">
-          <div class="sap-tabs">
-            <button class="is-active" type="button" data-sap-tab="items">Itens</button>
-            <button type="button" data-sap-tab="freight">Frete / Pagamento</button>
+          <div class="sap-tabs" role="tablist" aria-label="Etapas da cotacao">
+            <button class="is-active" type="button" role="tab" aria-selected="true" data-sap-tab="items">Produtos</button>
+            <button type="button" role="tab" aria-selected="false" data-sap-tab="freight">Entrega e pagamento</button>
           </div>
-          <div class="sap-tab-panel" data-sap-panel="items">
-            <div class="sap-tab-tools">
-              <label class="sap-checkbox"><input type="checkbox" checked> Simular impostos</label>
-              <span id="quoteCount">0 itens</span>
-            </div>
+          <div class="sap-tab-panel" role="tabpanel" data-sap-panel="items">
+            <span id="quoteCount" hidden>0 itens</span>
             <div id="quoteItems" class="sap-items-wrap"></div>
             <div class="sap-bottom-grid">
               <div class="sap-add-item">
                 <form id="quoteProductSearch" class="sap-add-form">
-                  <label>Cod.Item / EAN
-                    <input id="quoteProductTerm" type="search">
+                  <label>Codigo, nome ou aplicacao
+                    <input id="quoteProductTerm" type="search" placeholder="Digite e pressione Enter" autocomplete="off">
                   </label>
-                  <label>Nome item
-                    <input id="quoteProductNamePreview" type="text">
+                  <label class="commercial-selection-field">Produto selecionado
+                    <input id="quoteProductNamePreview" type="text" readonly>
                   </label>
-                  <label>Grupo
+                  <label class="commercial-selection-field">Grupo
                     <select id="quoteProductGroupPreview"><option value=""></option></select>
                   </label>
                   <div class="actions-row sap-item-search-actions">
@@ -89,14 +82,14 @@ async function renderCreateQuotation(container) {
                   </div>
                   <div class="sap-stock-line" id="quoteProductStockLine" hidden>Disp. Venda: <strong>-</strong> / Pr.Unit.: <strong>-</strong></div>
                   <label id="quoteQuantityLabel" hidden>Quantidade
-                    <input id="quoteAddQuantity" type="number" min="0" value="0">
+                    <input id="quoteAddQuantity" type="number" min="1" value="1">
                   </label>
                   <div class="actions-row sap-add-controls" id="quoteAddControls" hidden>
                     <button class="btn btn-primary" id="quoteAddSelectedProductButton" type="button">Adicionar</button>
                     <button class="btn btn-ghost" id="quoteClearProductButton" type="button">Limpar</button>
                   </div>
                 </form>
-                <div id="quoteSearchResults" class="sap-product-results"><div class="empty-state compact-state">Pesquise para adicionar itens a cotacao.</div></div>
+                <div id="quoteSearchResults" class="sap-product-results"></div>
               </div>
               <div class="sap-totals" id="quoteTotals"></div>
             </div>
@@ -121,7 +114,7 @@ async function renderCreateQuotation(container) {
               </div>
             </div>
           </div>
-          <div class="sap-tab-panel" data-sap-panel="freight" hidden>
+          <div class="sap-tab-panel" role="tabpanel" data-sap-panel="freight" hidden>
             <div class="sap-freight-grid">
               <label>Tipo de envio
                 <select id="quoteShippingType">
@@ -133,13 +126,13 @@ async function renderCreateQuotation(container) {
               <label>Codigo transportadora
                 <span class="sap-search-field">
                   <input id="quoteCarrierSearch" type="search">
-                  <button class="sap-search-button" id="quoteCarrierCodeSearchButton" type="button">...</button>
+                  <button class="sap-search-button" id="quoteCarrierCodeSearchButton" type="button" aria-label="Buscar transportadora por codigo">...</button>
                 </span>
               </label>
               <label>Nome transportadora
                 <span class="sap-search-field">
                   <input id="quoteCarrier" type="text">
-                  <button class="sap-search-button" id="quoteCarrierNameSearchButton" type="button">...</button>
+                  <button class="sap-search-button" id="quoteCarrierNameSearchButton" type="button" aria-label="Buscar transportadora por nome">...</button>
                 </span>
               </label>
               <label>Cond. de pagamento
@@ -155,17 +148,18 @@ async function renderCreateQuotation(container) {
             <input id="quoteCarrierAddress" type="hidden">
             <input id="quoteNotes" type="hidden">
             <div id="quoteCarrierResults" class="sap-search-results">
-              <div class="empty-state compact-state">Transportadoras cadastradas aparecem aqui.</div>
+              ${CrmUi.renderState('empty', 'Nenhuma transportadora selecionada', 'Pesquise pelo codigo ou nome quando o envio exigir transportadora.')}
             </div>
           </div>
         </section>
       </div>
       <div class="sap-footer-actions">
-        <button class="btn btn-primary" id="saveQuoteButton" type="button">Salvar</button>
-        <button class="btn btn-ghost" id="closeQuoteButton" type="button">Fechar</button>
+        <button class="btn btn-primary" id="saveQuoteButton" type="button">Salvar cotacao</button>
+        <button class="btn btn-ghost" id="closeQuoteButton" type="button">Cancelar</button>
         <p id="quoteMessage" class="form-message"></p>
       </div>
     </section>
+    </div>
   `;
 
   bindSapTabs(container);
@@ -198,13 +192,17 @@ async function renderCreateQuotation(container) {
   });
   document.getElementById('quoteProductSearch').addEventListener('submit', async (event) => {
     event.preventDefault();
+    const term = document.getElementById('quoteProductTerm').value.trim();
     quoteSelectedProduct = null;
     updateQuoteProductSelection(null);
     await searchProductsInto(document.getElementById('quoteSearchResults'), {
-      termo: getQuoteProductSearchTerm(),
-      grupo: document.getElementById('quoteProductGroupPreview').value,
+      termo: term,
+      grupo: '',
       regiao: document.getElementById('quoteRegion').value
     }, selectProductForQuote);
+  });
+  document.getElementById('quoteAnonymousClient').addEventListener('change', (event) => {
+    setAnonymousQuoteMode(event.target.checked);
   });
   document.getElementById('quoteRegion').addEventListener('change', () => {
     quoteItems = [];
@@ -212,10 +210,12 @@ async function renderCreateQuotation(container) {
     document.getElementById('quoteSearchResults').innerHTML = '<div class="empty-state">Pesquise novamente para obter precos do estado selecionado.</div>';
   });
   document.getElementById('saveQuoteButton').addEventListener('click', saveCurrentQuote);
-  document.getElementById('closeQuoteButton').addEventListener('click', () => {
+  const closeQuoteCreation = () => {
     if (hasUnsavedQuoteDraft() && !window.confirm('Existem alteracoes nao salvas. Deseja sair?')) return;
     openModule('quoteReports');
-  });
+  };
+  document.getElementById('closeQuoteButton').addEventListener('click', closeQuoteCreation);
+  document.getElementById('quoteFocusBackButton').addEventListener('click', closeQuoteCreation);
   document.getElementById('quoteAddSelectedProductButton').addEventListener('click', () => {
     if (!quoteSelectedProduct) return;
     addProductToQuote(quoteSelectedProduct);
@@ -239,7 +239,9 @@ async function renderCreateQuotation(container) {
 
 function applyQuoteDraft(draft) {
   if (!draft) return;
-  document.getElementById('quoteRegion').value = draft.regiao || 'SP';
+  document.getElementById('quoteRegion').value = draft.regiao || 'PR';
+  document.getElementById('quoteUsage').value = 'Revenda';
+  document.getElementById('quoteBillingState').value = draft.estado || '';
   document.getElementById('quoteClientSapCode').value = draft.codigo_sap_cliente || '';
   document.getElementById('quoteCnpj').value = formatCnpj(draft.cnpj || '');
   document.getElementById('quoteClient').value = draft.cliente || '';
@@ -253,14 +255,11 @@ function applyQuoteDraft(draft) {
   quoteItems = (draft.items || []).map((item) => Object.assign({}, item));
   quoteCreateSaved = false;
   renderQuoteCart();
-  document.getElementById('quoteMessage').textContent = 'Rascunho carregado. Revise e salve para gerar uma nova cotacao.';
-}
-
-function getQuoteProductSearchTerm() {
-  return [
-    document.getElementById('quoteProductTerm').value,
-    document.getElementById('quoteProductNamePreview').value
-  ].filter(Boolean).join(' ').trim();
+  const message = document.getElementById('quoteMessage');
+  if (message) {
+    message.style.color = 'var(--success)';
+    message.textContent = 'Rascunho carregado. Revise e salve para gerar uma nova cotacao.';
+  }
 }
 
 function setQuoteProductGroup(value) {
@@ -285,7 +284,7 @@ function updateQuoteProductSelection(product) {
   document.getElementById('quoteProductNamePreview').value = product.descricao || '';
   setQuoteProductGroup(product.grupo || product.linha || product.categoria || '');
   document.getElementById('quoteProductStockLine').innerHTML = 'Disp. Venda: <strong>' + escapeHtml(product.estoque || '0') + '</strong> / Pr.Unit.: <strong>' + money(Number(product.preco || 0)) + '</strong>';
-  document.getElementById('quoteAddQuantity').value = 0;
+  document.getElementById('quoteAddQuantity').value = 1;
 }
 
 function selectProductForQuote(product) {
@@ -298,7 +297,7 @@ function clearQuoteProductSelection() {
   document.getElementById('quoteProductTerm').value = '';
   document.getElementById('quoteProductNamePreview').value = '';
   setQuoteProductGroup('');
-  document.getElementById('quoteSearchResults').innerHTML = '<div class="empty-state compact-state">Pesquise para adicionar itens a cotacao.</div>';
+  document.getElementById('quoteSearchResults').innerHTML = '';
   updateQuoteProductSelection(null);
 }
 
@@ -319,15 +318,40 @@ function addProductToQuote(product, forcedQuantity = null) {
   if (existing) {
     existing.quantidade += quantity;
   } else {
-    quoteItems.push({
+    const item = {
       codigo: product.codigo,
       descricao: product.descricao,
       marca: product.marca,
       aplicacao: product.aplicacao,
+      ncm: product.ncm || '',
+      preco_sem_imposto: Number(product.preco_sem_imposto || 0),
       preco: Number(product.preco || 0),
       quantidade: quantity,
-      desconto_percentual: 0
-    });
+      desconto_percentual: quoteClientDiscountPercent,
+      fiscal_status: 'CALCULANDO'
+    };
+    quoteItems.push(item);
+    hydrateQuoteItemCommercialPrice(item);
+  }
+  renderQuoteCart();
+}
+
+async function hydrateQuoteItemCommercialPrice(item) {
+  try {
+    const origin = document.getElementById('quoteRegion')?.value || 'PR';
+    const destination = document.getElementById('quoteBillingState')?.value || origin;
+    const customerType = 'REVENDA';
+    const result = await supabaseGetProductCommercialPrice(item.codigo, origin, destination, customerType);
+    item.fiscal_status = result.status;
+    item.preco_sem_imposto = Number(result.base_price || 0);
+    item.tributos = Number(result.total_taxes || 0) + Number(result.total_expenses || 0);
+    item.preco = result.final_price == null ? 0 : Number(result.final_price);
+    item.fiscal_details = result;
+    item.commercial_availability = result.availability;
+    item.commercial_available_qty = result.source_display_value || result.available_qty;
+    item.fiscal_warnings = result.warnings || [];
+  } catch (error) {
+    item.fiscal_status = 'FALHA_CALCULO'; item.fiscal_warnings = [error.message || 'Falha no motor fiscal'];
   }
   renderQuoteCart();
 }
@@ -442,13 +466,11 @@ function renderQuoteCart() {
   const count = document.getElementById('quoteCount');
   const totals = document.getElementById('quoteTotals');
   count.textContent = quoteItems.length + (quoteItems.length === 1 ? ' item' : ' itens');
-  const subtotal = quoteItems.reduce((sum, item) => sum + item.preco * item.quantidade, 0);
   const total = quoteItems.reduce((sum, item) => sum + item.preco * item.quantidade * (1 - item.desconto_percentual / 100), 0);
-  const discount = subtotal - total;
   if (!quoteItems.length) {
     list.className = 'sap-items-wrap';
-    list.innerHTML = renderSapQuoteItemsTable([]);
-    totals.innerHTML = renderSapTotals(0, 0, 0);
+    list.innerHTML = '<p class="commercial-empty-items">Nenhum produto adicionado.</p>';
+    totals.innerHTML = renderCommercialTotal(0);
     return;
   }
   list.className = 'sap-items-wrap';
@@ -471,48 +493,41 @@ function renderQuoteCart() {
       renderQuoteCart();
     });
   });
-  totals.innerHTML = renderSapTotals(subtotal, discount, total);
+  totals.innerHTML = renderCommercialTotal(total);
 }
 
 function renderSapQuoteItemsTable(items) {
-  const totalQty = items.reduce((sum, item) => sum + Number(item.quantidade || 0), 0);
-  const subtotal = items.reduce((sum, item) => sum + item.preco * item.quantidade, 0);
-  const total = items.reduce((sum, item) => sum + item.preco * item.quantidade * (1 - item.desconto_percentual / 100), 0);
   const rows = items.length ? items.map((item, index) => {
     const finalUnit = item.preco * (1 - item.desconto_percentual / 100);
     const rowTotal = finalUnit * item.quantidade;
     return `
       <tr>
-        <td>${index + 1}</td>
-        <td class="sap-code">${escapeHtml(item.codigo)}</td>
-        <td>${escapeHtml(item.descricao || '')}</td>
-        <td>${escapeHtml(item.marca || '')}</td>
-        <td>${escapeHtml(item.aplicacao || '')}</td>
-        <td>UN</td>
+        <td class="commercial-item-product"><strong><span class="sap-code">${escapeHtml(item.codigo)}</span> · ${escapeHtml(item.descricao || '')}</strong>
+          <small>${escapeHtml([item.marca,item.aplicacao].filter(Boolean).join(' · '))}</small>
+          <small>Estoque ${escapeHtml(item.commercial_availability || '—')} ${escapeHtml(item.commercial_available_qty || '')}</small>
+          <details class="commercial-item-details">
+            <summary>Preco e impostos</summary>
+            <small>Base ${money(item.preco_sem_imposto || 0)} · Tributos ${money(item.tributos || 0)}</small>
+            <small class="fiscal-breakdown">${escapeHtml(formatFiscalBreakdown(item.fiscal_details))}</small>
+            <small class="fiscal-inline-status">${escapeHtml(formatFiscalStatus(item.fiscal_status))}</small>
+            ${item.fiscal_warnings?.length ? `<small class="fiscal-warning">${escapeHtml(formatFiscalWarnings(item.fiscal_warnings))}</small>` : ''}
+          </details></td>
         <td><input type="number" min="1" value="${escapeHtml(item.quantidade)}" data-quote-qty="${index}"></td>
         <td>${money(item.preco)}</td>
         <td><input type="number" min="0" step="0.01" value="${escapeHtml(item.desconto_percentual)}" data-quote-discount="${index}"></td>
-        <td>${money(finalUnit)}</td>
         <td>${money(rowTotal)}</td>
-        <td>${money(rowTotal)}</td>
-        <td><button class="sap-remove-button" type="button" data-quote-remove="${index}" title="Remover">-</button></td>
+        <td><button class="sap-remove-button" type="button" data-quote-remove="${index}" title="Remover" aria-label="Remover ${escapeHtml(item.codigo)}">×</button></td>
       </tr>
     `;
-  }).join('') : '<tr><td colspan="13" class="sap-empty-row">Nenhum item adicionado.</td></tr>';
+  }).join('') : '<tr><td colspan="6" class="sap-empty-row">Nenhum produto adicionado ainda.</td></tr>';
   return `
     <table class="sap-items-table">
       <thead>
         <tr>
-          <th>#</th><th>Cod.</th><th>Descricao</th><th>Marca</th><th>Aplicacao</th><th>UM</th><th>Qtde</th>
-          <th>Pr.Unit.</th><th>% do desc.</th><th>Pr.Apos Desc.</th><th>Total Apos Desc.</th><th>Total c/ Imp.</th><th></th>
+          <th>Produto</th><th>Qtde</th><th>Preco</th><th>Desc. %</th><th>Total</th><th></th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
-      <tfoot>
-        <tr>
-          <td colspan="6">Totais:</td><td>${totalQty}</td><td></td><td></td><td></td><td>${money(total)}</td><td>${money(subtotal)}</td><td></td>
-        </tr>
-      </tfoot>
     </table>
   `;
 }
@@ -527,6 +542,8 @@ async function saveCurrentQuote() {
     const payload = {
       sessionId: getSessionId(),
       regiao: document.getElementById('quoteRegion').value,
+      cliente_estado: document.getElementById('quoteBillingState').value,
+      customer_type: 'REVENDA',
       codigo_sap_cliente: document.getElementById('quoteClientSapCode').value,
       cliente: document.getElementById('quoteClient').value,
       cnpj: document.getElementById('quoteCnpj').value,
@@ -539,19 +556,21 @@ async function saveCurrentQuote() {
       observacao: document.getElementById('quoteNotes').value,
       items: quoteItems
     };
-    validateCommercialDocument(payload, 'a cotacao');
+    validateCommercialDocument(payload, 'a cotacao', {
+      allowAnonymous: document.getElementById('quoteAnonymousClient').checked
+    });
     const data = await supabaseCreateQuotation(payload);
     quoteItems = [];
     quoteCreateSaved = true;
     renderQuoteCart();
     message.style.color = 'var(--success)';
-    message.textContent = 'Cotacao ' + data.numero_cotacao + ' salva com sucesso.';
+    message.textContent = 'Cotacao ' + data.numero_cotacao + ' salva com sucesso.' + formatFiscalSaveSummary(data.fiscal);
   } catch (error) {
     message.style.color = 'var(--accent)';
     message.textContent = error.message;
   } finally {
     button.disabled = false;
-    button.textContent = 'Salvar';
+    button.textContent = 'Salvar cotacao';
   }
 }
 
@@ -596,6 +615,7 @@ function scheduleQuoteClientAutoSearch(event) {
 
 async function searchClientsForQuote(options = {}) {
   const target = document.getElementById('quoteClientResults');
+  target.hidden = false;
   const term = options.term !== undefined ? options.term : getQuoteClientSearchTerm();
   if (!isClientLookupReady(term)) {
     target.innerHTML = '<div class="empty-state compact-state">Digite pelo menos 3 caracteres ou CNPJ/codigo para buscar.</div>';
@@ -607,7 +627,6 @@ async function searchClientsForQuote(options = {}) {
     const exact = findExactClientMatch(rows, term);
     if (exact) {
       applyClientToQuote(exact);
-      target.innerHTML = '<div class="empty-state compact-state">Cliente encontrado e carregado automaticamente.</div>';
       return;
     }
     target.innerHTML = renderQuoteClientsResults(rows);
@@ -642,15 +661,63 @@ function renderQuoteClientsResults(rows) {
 }
 
 function applyClientToQuote(row) {
+  const clientName = row.razao_social || row.nome_fantasia || '';
   document.getElementById('quoteClientSapCode').value = row.codigo_sap_cliente || '';
-  document.getElementById('quoteClient').value = row.razao_social || row.nome_fantasia || '';
+  document.getElementById('quoteAnonymousClient').checked = false;
+  setAnonymousQuoteMode(false);
+  document.getElementById('quoteClient').value = clientName;
+  document.getElementById('quoteClientSearch').value = clientName;
   document.getElementById('quoteCnpj').value = formatCnpj(row.cnpj || '');
   document.getElementById('quotePhone').value = row.whatsapp || row.telefone || '';
   document.getElementById('quoteAddress').value = formatCadastroAddress(row);
+  document.getElementById('quoteClientResults').hidden = true;
   document.getElementById('quoteTerm').value = row.prazo_desejado || '';
+  quoteClientDiscountPercent = Math.max(0, Number(row.commercial_discount_percent || 0));
+  quoteItems.forEach((item) => { item.desconto_percentual = quoteClientDiscountPercent; });
+  const billingChanged = applyBillingRegionToQuote(row.estado);
+  renderQuoteCart();
   const message = document.getElementById('quoteMessage');
   message.style.color = 'var(--success)';
-  message.textContent = 'Cliente carregado na cotacao.';
+  const discountMessage = typeof isCurrentUserSeller === 'function' && isCurrentUserSeller()
+    ? ''
+    : ' Desconto padrao: ' + quoteClientDiscountPercent.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + '%.';
+  message.textContent = 'Cliente carregado na cotacao.' + discountMessage + ' Faturamento: ' + getBillingBranchLabel(document.getElementById('quoteRegion').value) + '.' + (billingChanged ? ' Itens removidos para recalcular valores.' : '');
+}
+
+function setAnonymousQuoteMode(enabled) {
+  const clientFieldIds = ['quoteClientSearch', 'quoteClientSapCode', 'quoteCnpj', 'quoteClient', 'quotePhone', 'quoteClientRef', 'quoteAddress'];
+  clientFieldIds.forEach((id) => {
+    const field = document.getElementById(id);
+    if (!field) return;
+    if (enabled) field.value = '';
+    field.disabled = enabled;
+  });
+  document.getElementById('quoteClientSearchSubmitButton').disabled = enabled;
+  document.getElementById('quoteClientSearchButton').disabled = enabled;
+  document.getElementById('quoteClientResults').hidden = true;
+  if (enabled) {
+    document.getElementById('quoteBillingState').value = '';
+    quoteClientDiscountPercent = 0;
+    quoteItems.forEach((item) => { item.desconto_percentual = 0; });
+    renderQuoteCart();
+    const message = document.getElementById('quoteMessage');
+    message.style.color = 'var(--muted)';
+    message.textContent = 'Cotacao sem cliente selecionada. Para transformar em pedido, sera necessario informar um cliente.';
+  }
+}
+
+function applyBillingRegionToQuote(uf) {
+  const regionSelect = document.getElementById('quoteRegion');
+  const stateInput = document.getElementById('quoteBillingState');
+  const nextRegion = getBillingRegionForUf(uf, regionSelect.value);
+  const changed = regionSelect.value !== nextRegion;
+  stateInput.value = normalizeBillingUf(uf);
+  regionSelect.value = nextRegion;
+  if (changed && quoteItems.length) {
+    quoteItems = [];
+    renderQuoteCart();
+  }
+  return changed;
 }
 
 async function searchCarriersForQuote() {
@@ -730,41 +797,47 @@ function renderDocumentReportShell(kind) {
   const from = new Date(today);
   from.setDate(from.getDate() - 30);
   return `
-    <section class="panel">
-      <div class="panel-header">
-        <div>
-          <h2>${title}</h2>
-          <p>Relatorio de ${title.toLowerCase()} por periodo, cliente, vendedor e status.</p>
+    <div class="module-page document-report-page">
+      ${CrmUi.renderPageHeader(
+        title,
+        `Acompanhe ${title.toLowerCase()} por periodo, cliente, vendedor e status.`,
+        canCreate ? `<button class="btn btn-primary" id="${kind}NewButton" type="button">${createLabel}</button>` : '',
+        'Comercial'
+      )}
+      <section class="panel document-report-filter-panel">
+        <div class="section-heading">
+          <div><h3>Filtros do relatorio</h3><p>Localize rapidamente por numero, cliente, CNPJ, SAP, vendedor ou situacao.</p></div>
         </div>
-        ${canCreate ? `<button class="btn btn-primary" id="${kind}NewButton" type="button">${createLabel}</button>` : ''}
-      </div>
-      ${canReport ? `<div class="field-grid">
-        <label class="span-4">Pesquisar
-          <input id="${kind}Search" placeholder="${numberLabel}, cliente, CNPJ, SAP ou vendedor">
-        </label>
-        <label class="span-2">De
-          <input id="${kind}From" type="date" value="${formatDateInput(from)}">
-        </label>
-        <label class="span-2">Ate
-          <input id="${kind}To" type="date" value="${formatDateInput(today)}">
-        </label>
-        <label class="span-2">Status
-          <select id="${kind}Status">
-            <option value="">Todos</option>
-            ${documentStatusOptions(kind).map((status) => `<option value="${escapeHtml(status)}">${escapeHtml(status)}</option>`).join('')}
-          </select>
-        </label>
-        <div class="span-2 actions-row align-end">
-          <button class="btn btn-primary" id="${kind}FilterButton" type="button">Filtrar</button>
+        ${canReport ? `<div class="field-grid document-report-filters">
+          <label class="span-4">Pesquisar
+            <input id="${kind}Search" type="search" placeholder="${numberLabel}, cliente, CNPJ, SAP ou vendedor">
+          </label>
+          <label class="span-2">De
+            <input id="${kind}From" type="date" value="${formatDateInput(from)}">
+          </label>
+          <label class="span-2">Ate
+            <input id="${kind}To" type="date" value="${formatDateInput(today)}">
+          </label>
+          <label class="span-2">Status
+            <select id="${kind}Status">
+              <option value="">Todos</option>
+              ${documentStatusOptions(kind).map((status) => `<option value="${escapeHtml(status)}">${escapeHtml(status)}</option>`).join('')}
+            </select>
+          </label>
+          <div class="span-2 actions-row align-end">
+            <button class="btn btn-primary" id="${kind}FilterButton" type="button">Filtrar</button>
+          </div>
         </div>
-      </div>
-      <div class="actions-row" style="margin-top: 12px;">
-        <button class="btn btn-secondary" id="${kind}ExportButton" type="button">Baixar CSV</button>
-        <p id="${kind}Message" class="form-message"></p>
-      </div>` : `<p id="${kind}Message" class="form-message">Use o botao ${createLabel} para criar um novo documento.</p>`}
-    </section>
-    <section class="panel" id="${kind}EditPanel" hidden></section>
-    <section class="panel" id="${kind}Results">${canReport ? `<div class="empty-state">Carregando ${title.toLowerCase()}...</div>` : `<div class="empty-state">Voce nao tem permissao para consultar o relatorio de ${title.toLowerCase()}.</div>`}</section>
+        <div class="document-report-toolbar">
+          <button class="btn btn-secondary" id="${kind}ExportButton" type="button">Baixar CSV</button>
+          <p id="${kind}Message" class="form-message" aria-live="polite"></p>
+        </div>` : `<div id="${kind}Message">${CrmUi.renderState('empty', 'Consulta nao autorizada', `Use o botao ${createLabel} para criar um novo documento.`)}</div>`}
+      </section>
+      <section class="document-edit-panel" id="${kind}EditPanel" hidden></section>
+      <section class="panel document-report-results" id="${kind}Results" aria-live="polite">${canReport
+        ? CrmUi.renderState('loading', `Carregando ${title.toLowerCase()}`, 'Consultando os documentos do periodo selecionado.')
+        : CrmUi.renderState('error', 'Acesso nao permitido', `Voce nao tem permissao para consultar o relatorio de ${title.toLowerCase()}.`)}</section>
+    </div>
   `;
 }
 
@@ -788,12 +861,13 @@ function bindDocumentReport(kind) {
 function userHasModulePermission(permission) {
   const session = getStoredSession() || {};
   if (String(session.perfil || '').toUpperCase() === 'ADMIN') return true;
-  const modules = session.modules || [];
-  return !modules.length || modules.includes(permission);
+  const modules = Array.isArray(session.modules) ? session.modules : [];
+  return modules.includes(permission);
 }
 
 async function openDocumentCreateScreen(kind) {
   const content = document.getElementById('content');
+  setCommercialFocusMode(true);
   document.getElementById('pageTitle').textContent = kind === 'pedidos' ? 'Novo Pedido' : 'Nova Cotacao';
   if (kind === 'pedidos') {
     await renderOrders(content);
@@ -804,6 +878,7 @@ async function openDocumentCreateScreen(kind) {
     applyQuoteDraft(window.pendingQuoteDraft || null);
     window.pendingQuoteDraft = null;
   }
+  setCommercialFocusMode(true);
   content.focus();
 }
 
@@ -811,10 +886,10 @@ async function loadDocumentReport(kind) {
   const target = document.getElementById(`${kind}Results`);
   const reportPermission = kind === 'pedidos' ? 'pedidos' : 'cotacoes';
   if (!userHasModulePermission(reportPermission)) {
-    target.innerHTML = `<div class="empty-state">Voce nao tem permissao para consultar este relatorio.</div>`;
+    target.innerHTML = CrmUi.renderState('error', 'Acesso nao permitido', 'Voce nao tem permissao para consultar este relatorio.');
     return;
   }
-  target.innerHTML = '<div class="empty-state">Carregando relatorio...</div>';
+  target.innerHTML = CrmUi.renderState('loading', 'Carregando relatorio', 'Consultando os documentos do periodo selecionado.');
   try {
     const filters = getDocumentFilters(kind);
     const rows = kind === 'pedidos'
@@ -824,26 +899,29 @@ async function loadDocumentReport(kind) {
     target.innerHTML = renderDocumentReport(kind, rows);
     bindDocumentEditButtons(kind, rows);
   } catch (error) {
-    target.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+    target.innerHTML = CrmUi.renderState('error', 'Nao foi possivel carregar o relatorio', error.message);
   }
 }
 
 function renderDocumentReport(kind, rows) {
-  if (!rows.length) return '<div class="empty-state">Nenhum registro encontrado.</div>';
+  if (!rows.length) return CrmUi.renderState('empty', 'Nenhum registro encontrado', 'Ajuste o periodo ou remova alguns filtros.');
   const numberKey = kind === 'pedidos' ? 'numero_pedido' : 'numero_cotacao';
   const total = rows.reduce((sum, row) => sum + Number(row.total || 0), 0);
   return `
-    <div class="cards" style="margin-bottom: 16px;">
+    <div class="cards document-report-metrics">
       <article class="metric-card"><span>Registros</span><strong>${rows.length}</strong></article>
       <article class="metric-card"><span>Total</span><strong>${money(total)}</strong></article>
       <article class="metric-card"><span>Ticket medio</span><strong>${money(total / rows.length)}</strong></article>
       <article class="metric-card"><span>Ultimo</span><strong>${escapeHtml(rows[0][numberKey] || '')}</strong></article>
     </div>
-    <div class="table-wrap">
-      <table>
+    <div class="section-heading document-report-result-heading">
+      <div><h3>Documentos encontrados</h3><p>${rows.length} registro${rows.length === 1 ? '' : 's'} no periodo e filtros selecionados.</p></div>
+    </div>
+    <div class="table-wrap document-report-table-wrap">
+      <table class="document-report-table">
         <thead>
           <tr>
-            <th>Numero</th><th>Data</th><th>Cliente</th><th>SAP</th><th>Vendedor</th><th>Status</th><th>Total</th><th></th>
+            <th>Numero</th><th>Data</th><th>Cliente</th><th>SAP</th><th>Vendedor</th><th>Status</th>${kind === 'pedidos' && canRenderReportTransferInformation() ? '<th>Transferencia</th>' : ''}<th>Total</th><th></th>
           </tr>
         </thead>
         <tbody>
@@ -855,18 +933,33 @@ function renderDocumentReport(kind, rows) {
               <td>${escapeHtml(row.codigo_sap_cliente || '')}</td>
               <td>${escapeHtml(row.vendedor || '')}</td>
               <td><span class="status-pill">${escapeHtml(formatDocumentStatus(kind, row.status))}</span></td>
+              ${kind === 'pedidos' && canRenderReportTransferInformation() ? `<td>${renderOrderTransferBadge(row.transfer_summary)}</td>` : ''}
               <td>${money(row.total)}</td>
-              <td><div class="actions-row compact-actions">
-                <button class="btn btn-secondary" type="button" data-edit-document="${index}">Abrir</button>
-                <button class="btn btn-ghost" type="button" data-duplicate-document="${index}">Duplicar</button>
-                ${kind === 'cotacoes' && row.status === 'APROVADA' ? `<button class="btn btn-primary" type="button" data-convert-quotation="${index}">Converter</button>` : ''}
-              </div></td>
+              <td>
+                <div class="actions-row compact-actions">
+                  <button class="btn btn-secondary" type="button" data-edit-document="${index}">Abrir</button>
+                  <button class="btn btn-ghost" type="button" data-duplicate-document="${index}">Duplicar</button>
+                  ${kind === 'cotacoes' ? (isAnonymousQuotation(row) ? '<button class="btn btn-primary" type="button" disabled title="Informe um cliente antes de converter em pedido">Converter</button>' : `<button class="btn btn-primary" type="button" data-convert-quotation="${index}">Converter</button>`) : ''}
+                </div>
+              </td>
             </tr>
           `).join('')}
         </tbody>
       </table>
     </div>
   `;
+}
+
+function renderOrderTransferBadge(summary) {
+  if (!summary || !Number(summary.total || 0)) return '<span class="muted">-</span>';
+  const pending = Number(summary.pending || 0);
+  const inTransit = Number(summary.in_transit || 0);
+  const received = Number(summary.received || 0);
+  let label = `${Number(summary.total || 0)} solic.`;
+  if (pending) label = `${pending} pend.`;
+  else if (inTransit) label = `${inTransit} em trans.`;
+  else if (received) label = `${received} receb.`;
+  return `<span class="status-pill">${escapeHtml(label)}</span>`;
 }
 
 function bindDocumentEditButtons(kind, rows) {
@@ -893,18 +986,35 @@ async function duplicateCommercialDocument(kind, row) {
 }
 
 async function convertQuotationFromReport(row, button) {
-  if (!row || !row.id || row.status !== 'APROVADA') return;
+  if (!row || !row.id) return;
+  if (row.status === 'CONVERTIDA') {
+    const message = document.getElementById('cotacoesMessage');
+    if (message) {
+      message.style.color = 'var(--accent)';
+      message.textContent = 'Esta cotacao ja foi convertida.';
+    }
+    return;
+  }
   const message = document.getElementById('cotacoesMessage');
-  button.disabled = true;
-  message.textContent = 'Convertendo cotacao em pedido...';
+  if (button) button.disabled = true;
+  if (message) {
+    message.style.color = 'var(--muted)';
+    message.textContent = 'Convertendo cotacao em pedido...';
+  }
   try {
     const data = await supabaseConvertQuotationToOrder(row.id);
-    message.textContent = 'Cotacao convertida no pedido ' + (data.numero_pedido || '') + '.';
+    if (message) {
+      message.style.color = 'var(--success)';
+      message.textContent = 'Cotacao convertida no pedido ' + (data.numero_pedido || '') + '.';
+    }
     await loadDocumentReport('cotacoes');
   } catch (error) {
-    message.textContent = error.message;
+    if (message) {
+      message.style.color = 'var(--accent)';
+      message.textContent = error.message;
+    }
   } finally {
-    button.disabled = false;
+    if (button) button.disabled = false;
   }
 }
 
@@ -933,19 +1043,20 @@ function showDocumentEditForm(kind, row) {
   const title = kind === 'pedidos' ? 'Pedido de venda' : 'Cotacao de venda';
   const dateLabel = kind === 'pedidos' ? 'Dt.Pedido' : 'Dt.Cotacao';
   const regionValue = row.regiao === 'PR' ? '01 - MATRIZ - PR' : '02 - FILIAL - SP';
-  const branchLabel = formatCompanyBranchLabel(cachedCompanySettings || DEFAULT_COMPANY_SETTINGS);
+  const companySettings = cachedCompanySettings || DEFAULT_COMPANY_SETTINGS;
+  const branchLabel = formatCompanyBranchLabel(companySettings);
   window[`${kind}EditingItems`] = normalizeDocumentItems(row[itemsKey] || []);
   window[`${kind}EditDirty`] = false;
   panel.hidden = false;
   panel.innerHTML = `
-    <section class="sap-document">
+    <section class="sap-document commercial-document document-edit-workspace">
       <div class="sap-titlebar">
         <div class="sap-title"><span class="sap-title-icon">#</span><h2>${title}</h2></div>
-        <strong>No. ${escapeHtml(row[numberKey] || '')}</strong>
+        <strong class="sap-document-number">No. ${escapeHtml(row[numberKey] || '')}</strong>
       </div>
       <div class="sap-window">
         <section class="sap-section">
-          <h3>Dados gerais</h3>
+          <div class="sap-section-heading"><div><h3>Dados gerais</h3><p>Dados preservados do cliente, filial e situacao deste documento.</p></div></div>
           <div class="sap-form-grid">
             <div class="sap-form-left">
               <label>Filial<input type="text" value="${escapeHtml(branchLabel)}" readonly></label>
@@ -974,14 +1085,19 @@ function showDocumentEditForm(kind, row) {
             </div>
           </div>
         </section>
+        ${kind === 'pedidos' && canRenderReportTransferInformation() ? `<section class="sap-section" id="${kind}TransferPanel"><div class="sap-section-heading"><div><h3>Transferencias</h3><p>Solicitacoes vinculadas a este pedido.</p></div></div>${CrmUi.renderState('loading', 'Carregando transferencias', 'Consultando movimentacoes vinculadas.')}</section>` : ''}
+        <section class="sap-section">
+          <div class="sap-section-heading"><div><h3>Memoria fiscal</h3><p>Snapshot preservado no momento da criacao do documento; esta abertura nao recalcula impostos.</p></div></div>
+          ${renderDocumentFiscalPanel(window[`${kind}EditingItems`] || [])}
+        </section>
         <section class="sap-section sap-tabs-section">
-          <div class="sap-tabs">
-            <button class="is-active" type="button" data-sap-tab="edit-items">Itens</button>
-            <button type="button" data-sap-tab="edit-freight">Frete / Pagamento</button>
+          <div class="sap-tabs" role="tablist" aria-label="Detalhes do documento">
+            <button class="is-active" type="button" role="tab" aria-selected="true" data-sap-tab="edit-items">Itens</button>
+            <button type="button" role="tab" aria-selected="false" data-sap-tab="edit-freight">Frete / Pagamento</button>
           </div>
-          <div class="sap-tab-panel" data-sap-panel="edit-items">
+          <div class="sap-tab-panel" role="tabpanel" data-sap-panel="edit-items">
             <div class="sap-tab-tools">
-              <label class="sap-checkbox"><input type="checkbox" checked disabled> Simular impostos</label>
+              <span class="fiscal-auto-indicator"><strong>✓</strong> Impostos preservados no documento</span>
               <span id="${kind}EditCount">0 itens</span>
             </div>
             <div id="${kind}EditItems" class="sap-items-wrap"></div>
@@ -1001,14 +1117,12 @@ function showDocumentEditForm(kind, row) {
                     <button class="btn btn-primary" id="${kind}EditProductSearchButton" type="button">Buscar</button>
                   </div>
                 </div>
-                <div id="${kind}EditProductResults" class="sap-product-results">
-                  <div class="empty-state compact-state">Pesquise para adicionar novos itens.</div>
-                </div>
+                <div id="${kind}EditProductResults" class="sap-product-results">${CrmUi.renderState('empty', 'Pesquise um produto', 'Use codigo, EAN, nome ou grupo para adicionar itens.')}</div>
               </div>
               <div class="sap-totals" id="${kind}EditTotals"></div>
             </div>
           </div>
-          <div class="sap-tab-panel" data-sap-panel="edit-freight" hidden>
+          <div class="sap-tab-panel" role="tabpanel" data-sap-panel="edit-freight" hidden>
             <div class="sap-freight-grid">
               <label>Tipo de envio<input type="text" value="PAGO DESTINATARIO" readonly></label>
               <label>Codigo transportadora<input type="text" value="${escapeHtml(row.transportadora_cnpj || '')}" readonly></label>
@@ -1030,6 +1144,7 @@ function showDocumentEditForm(kind, row) {
   `;
   bindSapTabs(panel);
   renderDocumentEditItems(kind);
+  if (kind === 'pedidos' && canRenderReportTransferInformation()) loadOrderTransferPanel(row.id, `${kind}TransferPanel`);
   const searchButton = document.getElementById(`${kind}EditProductSearchButton`);
   const searchInput = document.getElementById(`${kind}EditProductTerm`);
   searchButton.addEventListener('click', () => searchProductsForDocumentEdit(kind, row.regiao || 'SP'));
@@ -1050,6 +1165,49 @@ function showDocumentEditForm(kind, row) {
   panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+async function loadOrderTransferPanel(orderId, panelId) {
+  const panel = document.getElementById(panelId);
+  if (!panel) return;
+  const heading = '<div class="sap-section-heading"><div><h3>Transferencias</h3><p>Solicitacoes vinculadas a este pedido.</p></div></div>';
+  try {
+    const rows = await supabaseListOrderTransferRequests(orderId);
+    panel.innerHTML = heading + renderOrderTransferPanelRows(rows);
+  } catch (error) {
+    panel.innerHTML = heading + CrmUi.renderState('error', 'Nao foi possivel carregar as transferencias', error.message);
+  }
+}
+
+function isAnonymousQuotation(row) {
+  return !row.client_id
+    && !String(row.codigo_sap_cliente || '').trim()
+    && !String(row.cnpj || '').trim()
+    && String(row.cliente || '').trim().toUpperCase() === 'CLIENTE NÃO INFORMADO';
+}
+
+function renderOrderTransferPanelRows(rows) {
+  if (!rows.length) return CrmUi.renderState('empty', 'Nenhuma transferencia vinculada', 'Este pedido nao possui solicitacoes de transferencia.');
+  return `
+    <div class="table-wrap compact-table">
+      <table>
+        <thead><tr><th>Produto</th><th>Origem</th><th>Destino</th><th>Qtd.</th><th>Status</th><th>Observacao</th><th>Atualizada</th></tr></thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr>
+              <td><strong>${escapeHtml(row.product_code || '')}</strong><small>${escapeHtml([row.product_description, row.product_brand].filter(Boolean).join(' | '))}</small></td>
+              <td>${escapeHtml(row.source_branch_code || '')}<small>${escapeHtml(formatTransferQty(row.source_available_qty))} disp.</small></td>
+              <td>${escapeHtml(row.target_branch_code || '')}<small>${escapeHtml(formatTransferQty(row.target_available_qty))} disp.</small></td>
+              <td>${escapeHtml(formatTransferQty(row.requested_qty))}</td>
+              <td><span class="status-pill">${escapeHtml(formatStockTransferStatus(row.status))}</span></td>
+              <td>${row.notes ? `<small>${escapeHtml(row.notes)}</small>` : '<small>-</small>'}</td>
+              <td>${escapeHtml(formatDateTime(row.updated_at || row.created_at))}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
 function normalizeDocumentItems(items) {
   return (items || [])
     .slice()
@@ -1061,8 +1219,124 @@ function normalizeDocumentItems(items) {
       aplicacao: item.aplicacao,
       preco: Number(item.preco_unitario || 0),
       quantidade: Number(item.quantidade || 1),
-      desconto_percentual: Number(item.desconto_percentual || 0)
+      desconto_percentual: Number(item.desconto_percentual || 0),
+      preco_sem_imposto_unitario: item.preco_sem_imposto_unitario == null ? null : Number(item.preco_sem_imposto_unitario),
+      imposto_unitario: item.imposto_unitario == null ? null : Number(item.imposto_unitario),
+      fiscal_tax_rule_id: item.fiscal_tax_rule_id || '',
+      fiscal_status: item.fiscal_status || '',
+      fiscal_details: item.fiscal_details || null
     }));
+}
+
+function renderDocumentFiscalPanel(items) {
+  const rows = Array.isArray(items) ? items : [];
+  if (!rows.length) return '<div class="empty-state compact-state">Nenhum item para analise fiscal.</div>';
+  const calculatedStatuses = ['CALCULATED', 'OK', 'OK_SEM_ST'];
+  const missingNcmStatuses = ['MISSING_NCM', 'NCM_AUSENTE'];
+  const missingRuleStatuses = ['MISSING_RULE', 'REGRA_FISCAL_AUSENTE', 'REGRA_FISCAL_INCOMPLETA'];
+  const calculated = rows.filter((item) => calculatedStatuses.includes(item.fiscal_status)).length;
+  const missingNcm = rows.filter((item) => missingNcmStatuses.includes(item.fiscal_status)).length;
+  const missingRule = rows.filter((item) => missingRuleStatuses.includes(item.fiscal_status)).length;
+  const knownStatuses = calculatedStatuses.concat(missingNcmStatuses, missingRuleStatuses);
+  return `
+    <div class="import-summary">
+      <article><span>Calculados</span><strong>${calculated}</strong></article>
+      <article><span>Sem NCM</span><strong>${missingNcm}</strong></article>
+      <article><span>Sem regra</span><strong>${missingRule}</strong></article>
+      <article><span>Preco legado</span><strong>${rows.filter((item) => !knownStatuses.includes(item.fiscal_status)).length}</strong></article>
+    </div>
+    <div class="table-wrap compact-table">
+      <table>
+        <thead>
+          <tr><th>Produto</th><th>NCM</th><th>Status</th><th>Base s/ imp.</th><th>Imposto un.</th><th>Preco final</th><th>Regra</th></tr>
+        </thead>
+        <tbody>
+          ${rows.map((item) => renderDocumentFiscalRow(item)).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderDocumentFiscalRow(item) {
+  const details = item.fiscal_details || {};
+  const status = formatFiscalStatus(item.fiscal_status);
+  const ncm = details.ncm || '-';
+  const rule = item.fiscal_tax_rule_id
+    ? [details.origin_state || details.uf_origem, details.destination_state || details.uf_destino, details.customer_type].filter(Boolean).join(' -> ')
+    : '-';
+  return `
+    <tr>
+      <td><strong>${escapeHtml(item.codigo || '')}</strong><small>${escapeHtml(item.descricao || '')}</small></td>
+      <td>${escapeHtml(formatFiscalNcm(ncm))}</td>
+      <td><span class="status-pill">${escapeHtml(status)}</span><small class="fiscal-row-breakdown">${escapeHtml(formatFiscalBreakdown(details))}</small></td>
+      <td>${item.preco_sem_imposto_unitario == null ? '-' : money(item.preco_sem_imposto_unitario)}</td>
+      <td>${item.imposto_unitario == null ? '-' : money(item.imposto_unitario)}</td>
+      <td>${money(item.preco)}</td>
+      <td>${escapeHtml(rule)}${item.fiscal_tax_rule_id ? `<small>${escapeHtml(item.fiscal_tax_rule_id)}</small>` : ''}</td>
+    </tr>
+  `;
+}
+
+function formatFiscalStatus(status) {
+  const labels = {
+    CALCULATED: 'Calculado',
+    MISSING_NCM: 'Sem NCM',
+    MISSING_RULE: 'Sem regra',
+    LEGACY_PRICE: 'Preço legado',
+    OK: 'OK',
+    OK_SEM_ST: 'OK - SEM ST',
+    NCM_AUSENTE: 'NCM ausente',
+    PRECO_AUSENTE: 'Preço ausente',
+    REGRA_FISCAL_AUSENTE: 'Regra fiscal ausente',
+    REGRA_FISCAL_INCOMPLETA: 'Regra fiscal incompleta',
+    PRECO_FISCAL_INDISPONIVEL: 'Preço fiscal indisponível',
+    PRODUTO_NAO_LOCALIZADO: 'Produto não localizado',
+    ESTOQUE_NAO_IMPORTADO: 'Estoque não importado',
+    CALCULANDO: 'Calculando...'
+  };
+  return labels[status] || status || 'Preco legado';
+}
+
+function formatFiscalWarnings(warnings) {
+  const labels = {
+    PIS_NAO_DEFINIDO: 'PIS sem alíquota na fonte SAP (não incluído)',
+    COFINS_NAO_DEFINIDO: 'COFINS sem alíquota na fonte SAP (não incluído)',
+    FCP_NAO_DEFINIDO: 'FCP sem alíquota na fonte SAP (não incluído)',
+    IPI_AUSENTE: 'IPI ausente',
+    CEST_AUSENTE: 'CEST ausente',
+    ICMS_INTERESTADUAL_AUSENTE: 'ICMS interestadual ausente',
+    ICMS_INTERNO_AUSENTE: 'ICMS interno ausente',
+    MVA_AUSENTE: 'MVA ausente',
+    ESTOQUE_NAO_IMPORTADO: 'Estoque da filial não importado',
+    PRECO_ROTA_EXCEL_AUSENTE: 'Preço final da rota ausente no Excel',
+    PRECO_ROTA_EXCEL_NAO_APROVADO: 'Preço da rota não aprovado no Excel',
+    FALLBACK_FISCAL_NAO_HOMOLOGADO: 'Motor fiscal interno bloqueado até a homologação'
+  };
+  return (Array.isArray(warnings) ? warnings : [])
+    .map((warning) => labels[warning] || warning)
+    .join(' · ');
+}
+
+function formatFiscalBreakdown(details) {
+  if (!details || typeof details !== 'object' || !details.route) return 'Memória fiscal aguardando cálculo.';
+  const legacyResale = details.calculation_profile === 'LEGACY_REVENDA';
+  const parts = [
+    legacyResale ? 'Perfil Revenda (portal atual)' : null,
+    `Rota ${String(details.route).replace('-', '→')}`,
+    `IPI ${details.ipi_amount == null ? 'não definido' : money(Number(details.ipi_amount))}`,
+    `ICMS próprio ${details.own_icms_amount == null ? 'não definido' : money(Number(details.own_icms_amount))}${details.own_icms_included_in_total === false ? ' (referência, não somado)' : ''}`,
+    `ICMS-ST ${details.icms_st_amount == null ? 'não definido' : money(Number(details.icms_st_amount))}`
+  ].filter(Boolean);
+  if (details.pis_amount != null) parts.push(`PIS ${money(Number(details.pis_amount))}`);
+  if (details.cofins_amount != null) parts.push(`COFINS ${money(Number(details.cofins_amount))}`);
+  if (details.fcp_amount != null) parts.push(`FCP ${money(Number(details.fcp_amount))}`);
+  return parts.join(' · ');
+}
+
+function formatFiscalNcm(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.length === 8 ? `${digits.slice(0, 4)}.${digits.slice(4, 6)}.${digits.slice(6)}` : String(value || '-');
 }
 
 function renderDocumentEditItems(kind) {
