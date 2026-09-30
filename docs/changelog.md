@@ -1,5 +1,20 @@
 # Changelog técnico
 
+## 2026-09-30 — SP sem ICMS-ST a partir de 01/10/2026
+
+- foi criada uma política comercial datada para a rota SP→SP: desde
+  01/10/2026, preço operacional é preço-base + IPI, sem ICMS-ST;
+- o preço consolidado importado do Excel não é alterado: valor, tributos e
+  memória originais permanecem disponíveis no snapshot de origem;
+- pedidos, cotações, conversões e o Portal B2B passam pelo mesmo ajuste, sem
+  permitir que uma leitura direta do preço antigo recoloque a ST;
+- pedidos anteriores à vigência não são recalculados retroativamente;
+- cada item novo registra código, vigência, motivo e valores anteriores da
+  política, e uma falha de base/IPI bloqueia o preço em vez de presumir zero;
+- a data comercial usa explicitamente o fuso `America/Sao_Paulo`, evitando
+  ativação antecipada pela data UTC do banco;
+- a alteração possui rollback próprio e regressão de antes/depois da vigência.
+
 ## 2026-09-21 — sincronização manual confiável no CRM
 
 - o botão “Sincronizar agora” passa a enviar explicitamente o JWT da sessão e

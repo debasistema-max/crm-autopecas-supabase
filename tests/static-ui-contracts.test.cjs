@@ -503,6 +503,20 @@ test('Excel synchronization rejects zero prices but preserves valid zero-tax rou
   assert.match(regression, /TRIBUTO_ZERO_VALIDO_FOI_REJEITADO/);
 });
 
+test('SP commercial orders switch to base plus IPI on 2026-10-01 without mutating Excel prices', () => {
+  const migration = read('supabase/migrations/090_sp_ipi_only_from_2026_10_01.sql');
+  const regression = read('supabase/tests/090_sp_ipi_only_from_2026_10_01_regression.sql');
+  assert.match(migration, /'SP_IPI_ONLY_2026_10_01','SP','SP','IPI_ONLY',date '2026-10-01'/);
+  assert.match(migration, /'source_final_price',v_source->'final_price'/);
+  assert.match(migration, /'final_price',round\(v_base,2\)\+round\(v_ipi,2\)/);
+  assert.match(migration, /'icms_st_amount',0/);
+  assert.match(migration, /normalize_document_tax_policy\('pedido'/);
+  assert.match(migration, /b2b_create_document_raw_090/);
+  assert.doesNotMatch(migration, /update public\.product_route_prices set/);
+  assert.match(regression, /POLITICA_SP_ATIVADA_ANTES_DA_VIGENCIA/);
+  assert.match(regression, /POLITICA_SP_ALTEROU_OUTRA_ROTA/);
+});
+
 test('OneDrive synchronization blocks workbooks with missing search formulas', () => {
   const audit = read('scripts/audit_excel_formula_contract.py');
   const runner = read('scripts/sync_onedrive_personal.py');
