@@ -1,25 +1,44 @@
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS'
-};
+import { createClient } from 'npm:@supabase/supabase-js@2.116.0';
+
+const allowedOrigins = () => (Deno.env.get('PUBLIC_PORTAL_ALLOWED_ORIGINS') ||
+  'https://debasistema-max.github.io,http://localhost:8000,http://127.0.0.1:8000')
+  .split(',').map((value) => value.trim()).filter(Boolean);
+
+function corsHeaders(req: Request) {
+  const origin = req.headers.get('origin') || '';
+  return {
+    ...(origin && allowedOrigins().includes(origin) ? { 'Access-Control-Allow-Origin': origin } : {}),
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+    'Vary': 'Origin'
+  };
+}
 const EMAIL_TIMEOUT_MS = Number(Deno.env.get('CADASTRO_EMAIL_TIMEOUT_MS') || '18000');
 const SMTP_STEP_TIMEOUT_MS = Number(Deno.env.get('CADASTRO_SMTP_STEP_TIMEOUT_MS') || '8000');
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
-  if (req.method !== 'POST') return json({ ok: false, error: 'Metodo nao permitido.' }, 405);
+  const origin = req.headers.get('origin') || '';
+  if (origin && !allowedOrigins().includes(origin)) return json(req, { ok: false, error: 'Origem nao autorizada.' }, 403);
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders(req) });
+  if (req.method !== 'POST') return json(req, { ok: false, error: 'Metodo nao permitido.' }, 405);
+  const contentLength = Number(req.headers.get('content-length') || 0);
+  if (contentLength > 22 * 1024 * 1024) return json(req, { ok: false, error: 'Envio acima do limite permitido.' }, 413);
 
   try {
     const payload = await req.json();
     const cnpj = onlyDigits(payload.cnpj);
-    if (cnpj.length !== 14) return json({ ok: false, error: 'CNPJ invalido.' }, 400);
+    if (cnpj.length !== 14) return json(req, { ok: false, error: 'CNPJ invalido.' }, 400);
     if (!payload.razao_social || !payload.email_compras) {
-      return json({ ok: false, error: 'Razao social e email de compras sao obrigatorios.' }, 400);
+      return json(req, { ok: false, error: 'Razao social e email de compras sao obrigatorios.' }, 400);
+    }
+    const supabase = getSupabaseConfig();
+    if (!await consumeRateLimit(req, supabase, 'cadastro-ip', 3600, 5) ||
+        !await consumeRateLimit(req, supabase, `cadastro-cnpj-${cnpj}`, 3600, 2)) {
+      return json(req, { ok: false, error: 'Limite temporario de cadastros atingido. Tente mais tarde.' }, 429);
     }
     const anexos = normalizeAttachments(payload.anexos || []);
-
-    const supabase = getSupabaseConfig();
     ensureEmailConfigured();
 
     const recent = await supabaseFetch(
@@ -27,14 +46,10 @@ Deno.serve(async (req) => {
       `/rest/v1/cadastros_clientes?select=id&cnpj=eq.${encodeURIComponent(cnpj)}&created_at=gte.${encodeURIComponent(new Date(Date.now() - 15 * 60 * 1000).toISOString())}&limit=1`
     );
     if ((recent || []).length) {
-      return json({ ok: false, error: 'Ja existe um cadastro recente para este CNPJ.' }, 429);
+      return json(req, { ok: false, error: 'Ja existe um cadastro recente para este CNPJ.' }, 429);
     }
 
-    const cadastroPayload = Object.assign({}, payload, {
-      cnpj,
-      origem: 'portal_publico',
-      anexos: []
-    });
+    const cadastroPayload = sanitizeCadastroPayload(payload, cnpj);
 
     const rows = await supabaseFetch(
       supabase,
@@ -62,9 +77,10 @@ Deno.serve(async (req) => {
     }
 
     const emailResult = await sendEmails(supabase, data, payload, anexos);
-    return json({ ok: true, data: Object.assign({}, data, { anexos: attachments, email: emailResult }) });
+    return json(req, { ok: true, data: Object.assign({}, data, { anexos: attachments, email: emailResult }) });
   } catch (error) {
-    return json({ ok: false, error: error.message || 'Erro ao enviar cadastro.' }, 500);
+    console.error('cadastro-cliente', error);
+    return json(req, { ok: false, error: publicError(error) }, 500);
   }
 });
 
@@ -126,8 +142,8 @@ async function sendEmails(
   }
 
   const customerRecipients = Array.from(new Set([
-    payload.email_compras,
-    payload.email_financeiro
+    strictEmail(payload.email_compras),
+    payload.email_financeiro ? strictEmail(payload.email_financeiro) : ''
   ].filter(Boolean)));
 
   for (const customerTo of customerRecipients) {
@@ -150,7 +166,7 @@ async function sendEmails(
 }
 
 async function getPortalCadastroEmailTo(config: { url: string; key: string }) {
-  const fallback = Deno.env.get('CADASTRO_EMAIL_TO') || 'financeiro@ipsbrasil.com.br';
+  const fallback = String(Deno.env.get('CADASTRO_EMAIL_TO') || '').trim();
   try {
     const rows = await supabaseFetch(
       config,
@@ -158,11 +174,12 @@ async function getPortalCadastroEmailTo(config: { url: string; key: string }) {
     );
     const value = Array.isArray(rows) && rows[0] ? rows[0].value : null;
     const email = String(value?.email_principal || '').trim();
-    return email || fallback;
+    if (email) return email;
   } catch (error) {
     console.error('Falha ao ler email principal do portal', error.message || error);
-    return fallback;
   }
+  if (fallback) return fallback;
+  throw new Error('CADASTRO_EMAIL_TO nao configurado.');
 }
 
 function ensureEmailConfigured() {
@@ -221,7 +238,7 @@ async function sendEmailWithGmail(message: EmailMessage) {
     await smtp(conn, base64(username), 334);
     await smtp(conn, base64(password), 235);
     await smtp(conn, `MAIL FROM:<${extractEmailAddress(message.from)}>`);
-    await smtp(conn, `RCPT TO:<${message.to}>`);
+    await smtp(conn, `RCPT TO:<${strictEmail(message.to)}>`);
     await smtp(conn, 'DATA', 354);
     await smtp(conn, buildMimeMessage(message), 250);
     await smtp(conn, 'QUIT', 221).catch(() => undefined);
@@ -251,7 +268,7 @@ async function sendEmailWithResend(message: EmailMessage) {
     signal: controller.signal,
     body: JSON.stringify({
       from: message.from,
-      to: message.to,
+      to: strictEmail(message.to),
       subject: message.subject,
       text: message.text,
       attachments: (message.attachments || []).map((attachment) => ({
@@ -273,9 +290,9 @@ function isGmailConfigured() {
 }
 
 function getEmailFrom() {
-  return Deno.env.get('CADASTRO_EMAIL_FROM')
-    || Deno.env.get('GMAIL_SMTP_USER')
-    || 'Deba Sistema <debasistema@gmail.com>';
+  const from = String(Deno.env.get('CADASTRO_EMAIL_FROM') || Deno.env.get('GMAIL_SMTP_USER') || '').trim();
+  if (!from) throw new Error('CADASTRO_EMAIL_FROM ou GMAIL_SMTP_USER nao configurado.');
+  return from;
 }
 
 function getSupabaseConfig() {
@@ -285,16 +302,97 @@ function getSupabaseConfig() {
   return { url, key };
 }
 
+async function consumeRateLimit(
+  req: Request,
+  config: { url: string; key: string },
+  endpoint: string,
+  windowSeconds: number,
+  maxRequests: number
+) {
+  const client = createClient(config.url, config.key, { auth: { persistSession: false, autoRefreshToken: false } });
+  const { data, error } = await client.rpc('consume_public_endpoint_rate_limit', {
+    p_endpoint: endpoint.startsWith('cadastro-cnpj-') ? 'cadastro-cnpj' : endpoint,
+    p_subject_hash: await requestSubjectHash(req, endpoint),
+    p_window_seconds: windowSeconds,
+    p_max_requests: maxRequests
+  });
+  if (error) throw error;
+  return data === true;
+}
+
+async function requestSubjectHash(req: Request, discriminator: string) {
+  const ip = (req.headers.get('x-forwarded-for') || req.headers.get('cf-connecting-ip') || 'unknown')
+    .split(',')[0].trim().slice(0, 80);
+  const salt = Deno.env.get('PUBLIC_RATE_LIMIT_SALT') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+  const bytes = new TextEncoder().encode(`${salt}:${discriminator}:${ip}`);
+  return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)))
+    .map((value) => value.toString(16).padStart(2, '0')).join('');
+}
+
+function sanitizeCadastroPayload(payload: Record<string, unknown>, cnpj: string) {
+  const text = (key: string, max = 250) => cleanText(payload[key], max);
+  const estado = text('estado', 2).toUpperCase();
+  if (estado && !/^[A-Z]{2}$/.test(estado)) throw new Error('UF_INVALIDA');
+  return {
+    cnpj,
+    razao_social: text('razao_social', 180),
+    nome_fantasia: text('nome_fantasia', 180),
+    ie: text('ie', 40), telefone: text('telefone', 40), whatsapp: text('whatsapp', 40),
+    email_compras: strictEmail(payload.email_compras),
+    email_financeiro: payload.email_financeiro ? strictEmail(payload.email_financeiro) : null,
+    responsavel_compras: text('responsavel_compras', 120),
+    responsavel_financeiro: text('responsavel_financeiro', 120),
+    cep: onlyDigits(payload.cep).slice(0,8), endereco: text('endereco', 220), numero: text('numero', 30),
+    bairro: text('bairro', 120), complemento: text('complemento', 120), cidade: text('cidade', 120), estado,
+    site: text('site', 300), instagram: text('instagram', 120),
+    como_conheceu: text('como_conheceu', 120), segmento: text('segmento', 120),
+    transportadora: text('transportadora', 180), vendedor: text('vendedor', 120),
+    prazo_desejado: text('prazo_desejado', 120), volume_estimado: text('volume_estimado', 120),
+    observacoes: text('observacoes', 1500), atividade_principal: text('atividade_principal', 300),
+    cnae: text('cnae', 30), situacao_cadastral: text('situacao_cadastral', 80),
+    possui_regime_especial: payload.possui_regime_especial === true,
+    descricao_regime: text('descricao_regime', 1000), estados_regime: text('estados_regime', 120),
+    origem: 'portal_publico', anexos: [],
+    dados_api_cnpj: sanitizeCnpjSnapshot(payload.dados_api_cnpj)
+  };
+}
+
+function sanitizeCnpjSnapshot(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const input = value as Record<string, unknown>;
+  const keys = ['fonte','razao_social','nome_fantasia','cnae_fiscal','cnae_fiscal_descricao',
+    'descricao_situacao_cadastral','cep','logradouro','numero','complemento','bairro','municipio','uf'];
+  return Object.fromEntries(keys.map((key) => [key, cleanText(input[key], 300)]));
+}
+
+function cleanText(value: unknown, max: number) {
+  return String(value || '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0,max);
+}
+
+function strictEmail(value: unknown) {
+  const email = String(value || '').trim().toLowerCase();
+  if (email.length>254 || /[\r\n\0]/.test(email) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error('EMAIL_INVALIDO');
+  }
+  return email;
+}
+
 function normalizeAttachments(input: unknown[]) {
   if (!Array.isArray(input)) throw new Error('Lista de anexos invalida.');
   if (input.length > 5) throw new Error('Envie no maximo 5 arquivos.');
   let totalBytes = 0;
   const attachments: CadastroAttachment[] = [];
   for (const attachment of input as Array<Record<string, unknown>>) {
-    const size = Number(attachment.size || 0);
+    const declaredSize = Number(attachment.size || 0);
     const type = String(attachment.type || '');
     const content = String(attachment.content || '').replace(/\s/g, '');
     const name = sanitizeFileName(String(attachment.name || 'documento'));
+    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(content) || content.length % 4 !== 0) {
+      throw new Error(`Arquivo ${name} com conteudo invalido.`);
+    }
+    const padding = content.endsWith('==') ? 2 : content.endsWith('=') ? 1 : 0;
+    const size = Math.max(0, Math.floor(content.length * 3 / 4) - padding);
+    if (declaredSize && Math.abs(declaredSize-size)>2) throw new Error(`Arquivo ${name} com tamanho invalido.`);
     totalBytes += size;
     if (size > 5 * 1024 * 1024) throw new Error(`Arquivo ${name} ultrapassa 5 MB.`);
     if (totalBytes > 15 * 1024 * 1024) throw new Error('O total dos arquivos nao pode ultrapassar 15 MB.');
@@ -430,12 +528,15 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string)
 }
 
 function buildMimeMessage(message: EmailMessage) {
+  const safeFrom = cleanHeader(message.from, 254);
+  const safeTo = strictEmail(message.to);
+  const safeSubject = cleanHeader(message.subject, 180);
   const attachments = message.attachments || [];
   if (!attachments.length) {
     return [
-      `From: ${message.from}`,
-      `To: ${message.to}`,
-      `Subject: ${message.subject}`,
+      `From: ${safeFrom}`,
+      `To: ${safeTo}`,
+      `Subject: ${safeSubject}`,
       'MIME-Version: 1.0',
       'Content-Type: text/plain; charset=UTF-8',
       'Content-Transfer-Encoding: 8bit',
@@ -447,9 +548,9 @@ function buildMimeMessage(message: EmailMessage) {
 
   const boundary = `crm-${crypto.randomUUID()}`;
   const parts = [
-    `From: ${message.from}`,
-    `To: ${message.to}`,
-    `Subject: ${message.subject}`,
+    `From: ${safeFrom}`,
+    `To: ${safeTo}`,
+    `Subject: ${safeSubject}`,
     'MIME-Version: 1.0',
     `Content-Type: multipart/mixed; boundary="${boundary}"`,
     '',
@@ -482,7 +583,11 @@ function buildMimeMessage(message: EmailMessage) {
 
 function extractEmailAddress(value: string) {
   const match = value.match(/<([^>]+)>/);
-  return (match ? match[1] : value).trim();
+  return strictEmail((match ? match[1] : value).trim());
+}
+
+function cleanHeader(value: unknown, max: number) {
+  return String(value || '').replace(/[\r\n\0]+/g, ' ').trim().slice(0,max);
 }
 
 function base64(value: string) {
@@ -497,10 +602,16 @@ function dotStuff(value: string) {
   return value.replace(/^\./gm, '..');
 }
 
-function json(body: unknown, status = 200) {
+function publicError(error: unknown) {
+  const message = error instanceof Error ? error.message : '';
+  const known = ['EMAIL_INVALIDO','UF_INVALIDA'];
+  return known.includes(message) ? 'Dados invalidos. Revise os campos informados.' : 'Nao foi possivel concluir o cadastro.';
+}
+
+function json(req: Request, body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: Object.assign({ 'Content-Type': 'application/json' }, corsHeaders)
+    headers: Object.assign({ 'Content-Type': 'application/json; charset=utf-8' }, corsHeaders(req))
   });
 }
 

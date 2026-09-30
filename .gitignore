@@ -2,6 +2,7 @@
 node_modules/
 .pnpm-store/
 .cache/
+.worktrees/
 .codex/
 .agents/
 _xlsx_inspect/
@@ -13,7 +14,21 @@ __pycache__/
 *.tmp
 *.zip
 *.xlsx
+.env
+.env.*
+!.env.example
 supabase_import/*.csv
+supabase/.temp/
+supabase/admin/backups/
+tools/postgresql-client/
+
+# Local audit, media and generated outputs
+outputs/
+work/
+artifact_work_*/
+validacao-*/
+IPS_VIDEO_*/
+Musicas_*/
 
 # Legacy CRM sources kept out of the Supabase/GitHub app
 apps-script/

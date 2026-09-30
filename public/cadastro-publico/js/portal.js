@@ -180,7 +180,7 @@ async function consultCnpj() {
 async function fetchCnpjData(cnpj) {
   if (PORTAL_CONFIG.cnpjFunctionUrl) {
     const response = await fetch(PORTAL_CONFIG.cnpjFunctionUrl + '?cnpj=' + encodeURIComponent(cnpj), {
-      headers: { Accept: 'application/json' }
+      headers: getFunctionHeaders({ Accept: 'application/json' })
     });
     const result = await response.json();
     if (!response.ok || !result.ok) throw new Error(result.error || 'Consulta indisponivel.');
@@ -285,28 +285,29 @@ async function submitCadastro(event) {
 }
 
 async function saveCadastro(payload) {
-  if (PORTAL_CONFIG.cadastroFunctionUrl) {
-    let response;
-    try {
-      response = await fetch(PORTAL_CONFIG.cadastroFunctionUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-    } catch (error) {
-      throw new Error('Servico de envio ainda nao esta publicado no Supabase. Avise o setor de cadastro.');
-    }
-    const result = await response.json();
-    if (!response.ok || !result.ok) throw new Error(result.error || 'Nao foi possivel enviar o cadastro.');
-    return result.data;
+  if (!PORTAL_CONFIG.cadastroFunctionUrl) throw new Error('Servico seguro de cadastro nao configurado.');
+  let response;
+  try {
+    response = await fetch(PORTAL_CONFIG.cadastroFunctionUrl, {
+      method: 'POST',
+      headers: getFunctionHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(payload)
+    });
+  } catch (error) {
+    throw new Error('Servico de envio indisponivel. Avise o setor de cadastro.');
   }
-  const { data, error } = await portalSupabase
-    .from('cadastros_clientes')
-    .insert(payload)
-    .select('protocolo')
-    .single();
-  if (error) throw error;
-  return data;
+  const result = await response.json();
+  if (!response.ok || !result.ok) throw new Error(result.error || 'Nao foi possivel enviar o cadastro.');
+  return result.data;
+}
+
+function getFunctionHeaders(extraHeaders) {
+  const anonKey = PORTAL_SUPABASE_CONFIG && PORTAL_SUPABASE_CONFIG.anonKey;
+  if (!anonKey) return extraHeaders || {};
+  return Object.assign({
+    apikey: anonKey,
+    Authorization: 'Bearer ' + anonKey
+  }, extraHeaders || {});
 }
 
 async function buildPayload() {

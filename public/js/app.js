@@ -1,33 +1,39 @@
 const MODULES = {
-  dashboard: { title: 'Dashboard', permission: 'dashboard', render: renderDashboard },
-  products: { title: 'Produtos', permission: 'produtos', render: renderProducts },
-  ordersReport: { title: 'Pedidos', permission: ['pedidos', 'novo_pedido'], render: renderOrdersReport },
-  quoteReports: { title: 'Cotacoes', permission: ['cotacoes', 'nova_cotacao'], render: renderQuotationsReport },
-  partners: { title: 'Parceiros de Negocios', permission: 'parceiros', render: renderBusinessPartners },
-  sap: { title: 'Importacao SAP', permission: 'alimentacao', render: renderSapImport },
-  importBatches: { title: 'Lotes de Importacao', permission: 'visualizar_lotes_importacao', render: renderImportBatches },
-  cadastros: { title: 'Cadastros', permission: 'cadastros', render: renderCadastrosClientes },
-  portalCadastros: { title: 'Portal Clientes', permission: 'usuarios', adminOnly: true, render: renderPortalCadastrosControle },
-  companySettings: { title: 'Configuracoes da Empresa', permission: ['configuracoes_empresa', 'configuracoes'], adminOnly: true, render: renderCompanySettings },
-  users: { title: 'Usuarios', permission: 'usuarios', render: renderUsers },
-  logs: { title: 'Logs', permission: 'logs', render: renderLogs }
+  dashboard: { title: 'Início', section: 'Comercial', domain: 'dashboard', permission: 'dashboard', render: renderDashboard },
+  products: { title: 'Produtos', section: 'Catálogo', domain: 'products', permission: 'produtos', render: renderProducts },
+  ordersReport: { title: 'Pedidos', section: 'Comercial', domain: 'orders', permission: ['pedidos', 'novo_pedido'], render: renderOrdersReport },
+  stockTransfers: { title: 'Transferências', section: 'Operação', domain: 'orders', permission: 'pedidos', deniedRoles: ['VENDEDOR'], render: renderStockTransfers },
+  quoteReports: { title: 'Cotações', section: 'Comercial', domain: 'quotes', permission: ['cotacoes', 'nova_cotacao'], render: renderQuotationsReport },
+  partners: { title: 'Parceiros de negócios', section: 'Comercial', domain: 'customers', permission: 'parceiros', render: renderBusinessPartners },
+  dataCentral: { title: 'Central de Dados', section: 'Operação', domain: 'imports', permission: ['alimentacao', 'importar_estoque_preco'], adminOnly: true, render: renderDataSyncCenter },
+  sap: { title: 'Importação e Integrações', section: 'Operação', domain: 'imports', permission: ['alimentacao', 'importar_estoque_preco'], render: renderImportCenter },
+  cadastros: { title: 'Cadastros', section: 'Operação', domain: 'customers', permission: 'cadastros', render: renderCadastrosClientes },
+  portalCadastros: { title: 'Portal de clientes', section: 'Operação', domain: 'customers', permission: 'usuarios', adminOnly: true, render: renderPortalCadastrosControle },
+  companySettings: { title: 'Configurações da empresa', section: 'Sistema', domain: 'settings', permission: ['configuracoes_empresa', 'configuracoes'], adminOnly: true, render: renderCompanySettings },
+  taxRules: { title: 'Fiscal', section: 'Sistema', domain: 'settings', permission: ['configuracoes_empresa', 'configuracoes'], adminOnly: true, render: renderFiscalTaxRules },
+  users: { title: 'Usuários', section: 'Gestão', domain: 'users', permission: 'usuarios', render: renderUsers },
+  logs: { title: 'Logs', section: 'Gestão', domain: 'reports', permission: 'logs', render: renderLogs }
 };
 
+const SIDEBAR_PREFERENCE_KEY = 'crm.sidebar.collapsed.v1';
+
 const MODULE_ALIASES = {
+  customers: { module: 'partners' },
+  imports: { module: 'sap' },
+  dataSync: { module: 'dataCentral' },
   orders: { module: 'ordersReport' },
+  transfers: { module: 'stockTransfers' },
+  quotes: { module: 'quoteReports' },
   quoteCreate: { module: 'quoteReports', action: 'create' },
-  settings: { module: 'companySettings' }
+  reports: { module: 'quoteReports' },
+  settings: { module: 'companySettings' },
+  impostos: { module: 'taxRules' },
+  fiscal: { module: 'taxRules' }
 };
 
 let currentSession = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
-  currentSession = getStoredSession();
-  if (!currentSession || !getSessionId()) {
-    window.location.href = 'index.html';
-    return;
-  }
-
   validateCurrentSession()
     .then((session) => {
       if (!session) throw new Error('Sessao expirada.');
@@ -42,10 +48,28 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 function bootstrapAppShell() {
   applySessionToShell();
+  setupSidebarCollapse();
   document.getElementById('logoutButton').addEventListener('click', logoutCurrentUser);
   document.getElementById('menuButton').addEventListener('click', () => {
-    document.getElementById('sidebar').classList.toggle('is-open');
+    toggleMobileMenu();
   });
+  const sidebarBackdrop = document.getElementById('sidebarBackdrop');
+  if (sidebarBackdrop) {
+    sidebarBackdrop.addEventListener('click', () => toggleMobileMenu(false));
+  }
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') toggleMobileMenu(false);
+  });
+  window.addEventListener('pageshow', () => toggleMobileMenu(false));
+  const desktopLayout = window.matchMedia('(min-width: 981px)');
+  const releaseMobileScroll = (event) => {
+    if (event.matches) toggleMobileMenu(false);
+  };
+  if (typeof desktopLayout.addEventListener === 'function') {
+    desktopLayout.addEventListener('change', releaseMobileScroll);
+  } else if (typeof desktopLayout.addListener === 'function') {
+    desktopLayout.addListener(releaseMobileScroll);
+  }
   window.addEventListener('hashchange', () => {
     const requested = location.hash.replace('#', '') || 'dashboard';
     const route = getModuleRoute(requested);
@@ -53,6 +77,8 @@ function bootstrapAppShell() {
   });
 
   setupNavigation();
+  setupMobileNavigation();
+  CrmUi.observeResponsiveTables(document.getElementById('content'));
   const initialHash = location.hash.replace('#', '') || 'dashboard';
   const initial = getModuleRoute(initialHash);
   openModule(MODULES[initial.module] ? initialHash : 'dashboard');
@@ -60,6 +86,8 @@ function bootstrapAppShell() {
 
 function applySessionToShell() {
   document.getElementById('userName').textContent = currentSession.nome || currentSession.usuario || 'Usuario';
+  const role = document.getElementById('userRole');
+  if (role) role.textContent = String(currentSession.perfil || 'Usuário').toUpperCase();
   loadCompanySettings().catch((error) => console.warn(error));
 }
 
@@ -70,40 +98,150 @@ function setupNavigation() {
   });
 }
 
+function setupMobileNavigation() {
+  document.querySelectorAll('[data-mobile-module]').forEach((button) => {
+    button.addEventListener('click', () => openModule(button.dataset.mobileModule));
+  });
+  applyMobileNavigationVisibility();
+}
+
 function applyNavigationVisibility() {
-  const allowed = Array.isArray(currentSession && currentSession.modules) ? currentSession.modules : null;
+  const allowed = getCurrentSessionModules();
   document.querySelectorAll('.nav-item').forEach((button) => {
     const module = MODULES[button.dataset.module];
     const blockedByPermission = !!(module && !hasModuleAccess(module, allowed));
     const blockedByAdmin = !!(module && module.adminOnly && !isCurrentUserAdmin());
-    button.hidden = blockedByPermission || blockedByAdmin;
+    const blockedByRole = !!(module && isModuleBlockedForCurrentRole(module));
+    button.hidden = blockedByPermission || blockedByAdmin || blockedByRole;
   });
+  document.querySelectorAll('[data-nav-group]').forEach((group) => {
+    group.hidden = !Array.from(group.querySelectorAll('.nav-item')).some((button) => !button.hidden);
+  });
+  applyMobileNavigationVisibility();
+}
+
+function setupSidebarCollapse() {
+  const button = document.getElementById('sidebarCollapseButton');
+  if (!button) return;
+  let collapsed = false;
+  try {
+    collapsed = localStorage.getItem(SIDEBAR_PREFERENCE_KEY) === 'true';
+  } catch (error) {
+    console.warn('Preferência do menu não pôde ser restaurada.', error);
+  }
+  setSidebarCollapsed(collapsed);
+  button.addEventListener('click', () => setSidebarCollapsed(!document.body.classList.contains('sidebar-collapsed'), true));
+}
+
+function setSidebarCollapsed(collapsed, persist = false) {
+  document.body.classList.toggle('sidebar-collapsed', collapsed);
+  const button = document.getElementById('sidebarCollapseButton');
+  if (button) {
+    button.setAttribute('aria-pressed', String(collapsed));
+    button.setAttribute('aria-label', collapsed ? 'Expandir menu' : 'Recolher menu');
+    const label = button.querySelector('.sidebar-collapse-label');
+    const icon = button.querySelector('.sidebar-collapse-icon');
+    if (label) label.textContent = collapsed ? 'Expandir menu' : 'Recolher menu';
+    if (icon) icon.textContent = collapsed ? '›' : '‹';
+  }
+  if (!persist) return;
+  try {
+    localStorage.setItem(SIDEBAR_PREFERENCE_KEY, String(collapsed));
+  } catch (error) {
+    console.warn('Preferência do menu não pôde ser salva.', error);
+  }
+}
+
+function applyMobileNavigationVisibility() {
+  const allowed = getCurrentSessionModules();
+  document.querySelectorAll('[data-mobile-module]').forEach((button) => {
+    const module = MODULES[button.dataset.mobileModule];
+    const blockedByPermission = !!(module && !hasModuleAccess(module, allowed));
+    const blockedByAdmin = !!(module && module.adminOnly && !isCurrentUserAdmin());
+    const blockedByRole = !!(module && isModuleBlockedForCurrentRole(module));
+    button.hidden = blockedByPermission || blockedByAdmin || blockedByRole;
+  });
+}
+
+function toggleMobileMenu(force) {
+  const sidebar = document.getElementById('sidebar');
+  if (!sidebar) return;
+  const next = typeof force === 'boolean' ? force : !sidebar.classList.contains('is-open');
+  sidebar.classList.toggle('is-open', next);
+  document.body.classList.toggle('menu-open', next);
+  document.getElementById('menuButton')?.setAttribute('aria-expanded', String(next));
+}
+
+function setCommercialFocusMode(enabled) {
+  const active = Boolean(enabled);
+  document.body.classList.toggle('commercial-focus-mode', active);
+  ['sidebar', 'sidebarBackdrop', 'mobileNav'].forEach((id) => {
+    const element = document.getElementById(id);
+    if (!element) return;
+    element.hidden = active;
+    if (active) element.setAttribute('aria-hidden', 'true');
+    else element.removeAttribute('aria-hidden');
+  });
+  const topbar = document.querySelector('.topbar');
+  if (topbar) {
+    topbar.hidden = active;
+    if (active) topbar.setAttribute('aria-hidden', 'true');
+    else topbar.removeAttribute('aria-hidden');
+  }
+  const shell = document.querySelector('.app-shell');
+  if (shell) shell.style.display = active ? 'block' : '';
+  if (active) toggleMobileMenu(false);
 }
 
 async function openModule(name) {
   const route = getModuleRoute(name);
   const moduleName = route.module;
   const module = MODULES[moduleName] || MODULES.dashboard;
-  const allowed = currentSession.modules || [];
+  const allowed = getCurrentSessionModules();
   const content = document.getElementById('content');
-  document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('is-active', item.dataset.module === moduleName));
-  document.getElementById('pageTitle').textContent = module.title;
-  if (location.hash !== `#${moduleName}`) {
-    history.replaceState(null, '', `#${moduleName}`);
-  }
-  document.getElementById('sidebar').classList.remove('is-open');
+  document.body.classList.remove('product-detail-open');
+  setCommercialFocusMode(false);
+  toggleMobileMenu(false);
 
   if (module.adminOnly && !isCurrentUserAdmin()) {
-    content.innerHTML = '<div class="empty-state">Voce nao tem permissao para acessar este modulo.</div>';
+    content.innerHTML = CrmUi.renderState('error', 'Acesso não permitido', 'Seu perfil não possui permissão para acessar este módulo.');
+    content.focus();
+    return;
+  }
+
+  if (isModuleBlockedForCurrentRole(module)) {
+    content.innerHTML = CrmUi.renderState('error', 'Acesso não permitido', 'Este módulo não está disponível para o perfil vendedor.');
+    content.focus();
     return;
   }
 
   if (!hasModuleAccess(module, allowed)) {
-    content.innerHTML = '<div class="empty-state">Voce nao tem permissao para acessar este modulo.</div>';
+    content.innerHTML = CrmUi.renderState('error', 'Acesso não permitido', 'Seu perfil não possui permissão para acessar este módulo.');
+    content.focus();
     return;
   }
 
-  await module.render(content, { action: route.action });
+  document.querySelectorAll('.nav-item').forEach((item) => {
+    const active = item.dataset.module === moduleName;
+    item.classList.toggle('is-active', active);
+    if (active) item.setAttribute('aria-current', 'page');
+    else item.removeAttribute('aria-current');
+  });
+  document.querySelectorAll('[data-mobile-module]').forEach((item) => item.classList.toggle('is-active', item.dataset.mobileModule === moduleName));
+  document.getElementById('pageTitle').textContent = module.title;
+  const context = document.getElementById('pageContext');
+  if (context) context.textContent = module.section || 'CRM Comercial';
+  if (location.hash !== `#${moduleName}`) {
+    history.replaceState(null, '', `#${moduleName}`);
+  }
+
+  try {
+    await module.render(content, { action: route.action });
+    CrmUi.enhanceResponsiveTables(content);
+  } catch (error) {
+    console.error('Falha ao carregar módulo do CRM.', { module: moduleName, error });
+    content.innerHTML = CrmUi.renderState('error', 'Não foi possível carregar esta área', error.message || 'Tente novamente em instantes.');
+  }
   content.focus();
 }
 
@@ -122,13 +260,28 @@ function isCurrentUserAdmin() {
   return String(currentSession && currentSession.perfil || '').toUpperCase() === 'ADMIN';
 }
 
+function isCurrentUserSeller() {
+  return String(currentSession && currentSession.perfil || '').toUpperCase() === 'VENDEDOR';
+}
+
+function isModuleBlockedForCurrentRole(module) {
+  const role = String(currentSession && currentSession.perfil || '').toUpperCase();
+  return Array.isArray(module && module.deniedRoles) && module.deniedRoles.includes(role);
+}
+
+function canCurrentUserAccessTransfers() {
+  return !isCurrentUserSeller();
+}
+
 function hasModuleAccess(module, allowed) {
-  if (!module) return false;
   if (isCurrentUserAdmin()) return true;
-  const permissions = (Array.isArray(module.permission) ? module.permission : [module.permission]).filter(Boolean);
-  if (!permissions.length) return true;
-  if (!Array.isArray(allowed)) return false;
+  if (!allowed.length) return false;
+  const permissions = Array.isArray(module.permission) ? module.permission : [module.permission];
   return permissions.some((permission) => allowed.includes(permission));
+}
+
+function getCurrentSessionModules() {
+  return Array.isArray(currentSession && currentSession.modules) ? currentSession.modules : [];
 }
 
 function getModuleRoute(name) {
