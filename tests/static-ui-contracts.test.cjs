@@ -521,6 +521,23 @@ test('SP commercial orders switch to base plus IPI on 2026-10-01 without mutatin
   assert.match(regression, /PLANILHA_VIROU_DEPENDENCIA_OPERACIONAL/);
 });
 
+test('first OneDrive sync repairs only the legacy no-op footprint and keeps same-batch stock insertable', () => {
+  const timestampRepair = read('supabase/migrations/091_repair_legacy_stock_timestamp_for_first_sync.sql');
+  const insertConflictRepair = read('supabase/migrations/092_avoid_same_batch_stock_insert_conflicts.sql');
+  assert.match(timestampRepair, /disable trigger product_branch_stock_touch_updated_at/);
+  assert.match(timestampRepair, /s\.source_batch_id is null/);
+  assert.match(timestampRepair, /s\.source_updated_at is null/);
+  assert.match(timestampRepair, /s\.source_system is null/);
+  assert.match(timestampRepair, /s\.version=1/);
+  assert.match(timestampRepair, /s\.physical_qty=coalesce\(m\.audited_physical_qty,0\)/);
+  assert.match(timestampRepair, /enable trigger product_branch_stock_touch_updated_at/);
+  assert.match(insertConflictRepair, /new\.sync_batch_id is not null/);
+  assert.match(insertConflictRepair, /s\.batch_id=new\.sync_batch_id/);
+  assert.match(insertConflictRepair, /s\.sync_area='STOCK'/);
+  assert.match(insertConflictRepair, /s\.branch_code=b\.code/);
+  assert.match(insertConflictRepair, /s\.status<>'error'/);
+});
+
 test('OneDrive synchronization blocks workbooks with missing search formulas', () => {
   const audit = read('scripts/audit_excel_formula_contract.py');
   const runner = read('scripts/sync_onedrive_personal.py');
