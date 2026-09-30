@@ -150,6 +150,8 @@ test('personal OneDrive runner is server-only, chunked and fixed-folder-scoped',
   assert.match(runner, /\/me\/drive\/root:\//);
   assert.doesNotMatch(runner, /\/me\/drive\/root\/children/);
   assert.match(runner, /PASTA_ONEDRIVE_INVALIDA/);
+  assert.match(runner, /--validate-only/);
+  assert.match(runner, /if validate_only:/);
   assert.match(runner, /BACKUP_FOLDER_NAME = "Backups CRM"/);
   assert.match(runner, /BACKUP_RETENTION = 30/);
   assert.match(runner, /"If-None-Match": "\*"/);

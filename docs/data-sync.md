@@ -183,6 +183,10 @@ Configure no GitHub, em Actions variables:
 - `DATA_SYNC_EDGE_URL`.
 - `DATA_SYNC_ENABLED=true` somente depois da homologação ponta a ponta.
 
+O disparo manual do executor oferece `validate`, que baixa, audita fórmulas e
+normaliza a planilha sem criar backup e sem chamar o Supabase. Use esse modo
+antes do primeiro `synchronize` em homologação.
+
 Configure em Actions secrets:
 
 - `MS_GRAPH_REFRESH_TOKEN`;
