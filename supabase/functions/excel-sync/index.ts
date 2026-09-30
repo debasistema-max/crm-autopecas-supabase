@@ -64,7 +64,7 @@ async function dispatchGithubSync() {
       'X-GitHub-Api-Version': '2022-11-28',
       'User-Agent': 'ips-crm-data-sync'
     },
-    body: JSON.stringify({ ref })
+    body: JSON.stringify({ ref, inputs: { mode: 'synchronize' } })
   });
   if (!githubResponse.ok) {
     throw new Error(`GITHUB_DISPATCH_HTTP_${githubResponse.status}`);

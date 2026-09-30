@@ -158,6 +158,8 @@ DATA_SYNC_ADAPTER_PORT=8788
 Na Edge Function, configure `DATA_SYNC_GITHUB_TOKEN`, `DATA_SYNC_GITHUB_REPOSITORY`, `DATA_SYNC_GITHUB_WORKFLOW`, `DATA_SYNC_GITHUB_REF`, `DATA_SYNC_ALLOWED_ORIGIN` e, para o runner, `DATA_SYNC_SCHEDULER_SECRET`. A service role fica somente no ambiente do Supabase.
 
 Um ADMIN pode executar “Sincronizar agora”. A agenda chama a mesma Edge Function com `x-sync-secret`. SUPERVISOR só consulta se receber as permissões já previstas; VENDEDOR não executa nem consulta a Central de Dados.
+O disparo originado pelo CRM informa explicitamente `mode=synchronize`; o padrão
+seguro `validate` fica reservado ao disparo manual pelo GitHub Actions.
 
 Antes de contatar o adapter, a Edge Function valida a sessão com `auth.getUser()` e consulta `can_manage_data_sync()`. Assim, uma chave pública anônima ou um usuário sem perfil ADMIN não consegue provocar a leitura do Excel.
 
