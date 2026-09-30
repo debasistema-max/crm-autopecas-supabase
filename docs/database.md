@@ -10,10 +10,18 @@ Ambiente auditado: `mtwvxyvpnbgwgltelozw`. Produção não foi acessada.
 
 ## Baseline e migrations
 
-O repositório canônico consolida migrations 001–089. Nenhuma migration já
+O repositório canônico consolida migrations 001–090. Nenhuma migration já
 aplicada foi renumerada ou reescrita durante a consolidação. Na última
 verificação somente leitura, a homologação possuía 001–081 aplicadas e 082–089
 permaneciam apenas no Git, aguardando backup e regressões controladas.
+
+A migration 090 adiciona uma política comercial datada sem modificar a tabela
+de preços consolidados do Excel. Para SP→SP, documentos criados a partir de
+01/10/2026 usam somente base + IPI calculados pelas regras vigentes do motor
+fiscal do CRM. O resultado do Excel é apenas uma referência de validação:
+`MATCH`, `MISMATCH`, incompleta ou ausente. O resultado grava a política, a
+regra e as diferenças no snapshot fiscal do item; documentos criados antes da
+vigência permanecem inalterados.
 
 A definição real de `resolve_fiscal_tax_rule` foi recuperada por introspecção
 somente leitura e considerada nos testes de resolução histórica. Dumps de
