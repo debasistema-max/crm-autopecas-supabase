@@ -64,9 +64,17 @@ declare
   v_origin text:=public.normalize_fiscal_uf(target_origin_state);
   v_destination text:=public.normalize_fiscal_uf(target_destination_state);
   v_policy public.commercial_tax_policies;
+  v_branch public.branches;
+  v_branch_price public.product_branch_prices;
+  v_engine jsonb;
+  v_product_code text:=nullif(btrim(source_price->>'product_code'),'');
+  v_customer_type text:=upper(coalesce(nullif(btrim(source_price->>'customer_type'),''),'REVENDA'));
   v_base numeric(16,6);
   v_ipi numeric(16,6);
-  v_ipi_rate numeric(12,8);
+  v_excel_base numeric(16,6);
+  v_excel_ipi numeric(16,6);
+  v_excel_ipi_only_price numeric(16,6);
+  v_validation_status text;
   v_breakdown jsonb;
   v_warnings jsonb;
 begin
@@ -81,48 +89,78 @@ begin
   limit 1;
 
   if v_policy.code is null then return v_source; end if;
-  if upper(coalesce(v_source->>'status','')) not like 'OK%' then return v_source; end if;
 
-  v_base:=nullif(v_source->>'base_price','')::numeric;
-  v_ipi:=coalesce(
-    nullif(v_source->>'ipi_amount','')::numeric,
-    nullif(v_source#>>'{tax_breakdown,ipi}','')::numeric
-  );
-  if v_ipi is null and nullif(v_source->>'product_code','') is not null then
-    select coalesce(p.ipi_rate,case when p.ipi is null then null else p.ipi/100 end)
-      into v_ipi_rate
-    from public.products p
-    where p.codigo=v_source->>'product_code';
-    if v_base is not null and v_ipi_rate is not null then
-      v_ipi:=round(v_base*v_ipi_rate,6);
-    end if;
+  select * into v_branch from public.branches b
+  where b.active and b.code=v_origin limit 1;
+  select * into v_branch_price from public.product_branch_prices bp
+  where bp.product_code=v_product_code and bp.branch_id=v_branch.id
+    and bp.valid_from<=target_date and (bp.valid_until is null or bp.valid_until>=target_date)
+  order by bp.valid_from desc limit 1;
+  v_base:=v_branch_price.sale_price;
+
+  if v_product_code is not null and v_base is not null and v_base>0 then
+    v_engine:=public.calculate_product_price_crm_rules(
+      v_product_code,v_origin,v_destination,v_base,target_date,v_customer_type
+    );
   end if;
+  v_base:=coalesce(nullif(v_engine->>'base_price','')::numeric,v_base);
+  v_ipi:=nullif(v_engine->>'ipi_amount','')::numeric;
 
-  if v_base is null or v_base<=0 or v_ipi is null or v_ipi<0 then
+  if v_product_code is null or v_branch.id is null or v_base is null or v_base<=0
+     or v_ipi is null or v_ipi<0 or nullif(v_engine->>'fiscal_rule_id','') is null then
     return v_source||jsonb_build_object(
       'status','PRECO_FISCAL_INDISPONIVEL',
       'final_price',null,
       'total_taxes',null,
-      'price_source','FISCAL_FALLBACK_BLOCKED',
+      'price_source','CRM_FISCAL_ENGINE_BLOCKED',
       'tax_policy_applied',false,
       'tax_policy_code',v_policy.code,
-      'warnings',coalesce(v_source->'warnings','[]'::jsonb)
-        ||jsonb_build_array('BASE_OU_IPI_AUSENTE_PARA_POLITICA_SP')
+      'warnings',coalesce(v_engine->'warnings','[]'::jsonb)
+        ||jsonb_build_array('BASE_REGRA_OU_IPI_AUSENTE_NO_MOTOR_CRM')
     );
   end if;
 
-  v_breakdown:=coalesce(v_source->'tax_breakdown','{}'::jsonb)
-    ||jsonb_build_object('ipi',v_ipi,'icms_st',0,'pis',0,'cofins',0,'fcp',0);
-  v_warnings:=coalesce(v_source->'warnings','[]'::jsonb)
+  -- A rota consolidada do Excel e somente evidencia de comparacao. Nenhum dos
+  -- valores abaixo alimenta o preco operacional calculado pelo motor do CRM.
+  if upper(coalesce(v_source->>'status','')) like 'OK%'
+     and nullif(v_source->>'final_price','') is not null then
+    v_excel_base:=nullif(v_source->>'base_price','')::numeric;
+    v_excel_ipi:=coalesce(nullif(v_source->>'ipi_amount','')::numeric,
+      nullif(v_source#>>'{tax_breakdown,ipi}','')::numeric);
+    if v_excel_base is not null and v_excel_ipi is not null then
+      v_excel_ipi_only_price:=round(v_excel_base,2)+round(v_excel_ipi,2);
+      v_validation_status:=case
+        when abs(round(v_base,2)-round(v_excel_base,2))<=0.02
+          and abs(round(v_ipi,2)-round(v_excel_ipi,2))<=0.02
+          and abs((round(v_base,2)+round(v_ipi,2))-v_excel_ipi_only_price)<=0.02
+          then 'MATCH' else 'MISMATCH' end;
+    else
+      v_validation_status:='EXCEL_REFERENCE_INCOMPLETE';
+    end if;
+  else
+    v_validation_status:='EXCEL_REFERENCE_MISSING';
+  end if;
+
+  v_breakdown:=jsonb_build_object(
+    'ipi',v_ipi,'icms_proprio',v_engine->'own_icms_amount',
+    'icms_st',0,'pis',0,'cofins',0,'fcp',0
+  );
+  v_warnings:=coalesce(v_engine->'warnings','[]'::jsonb)
     ||jsonb_build_array('SP_ICMS_ST_REMOVIDO_DESDE_2026_10_01');
+  if v_validation_status<>'MATCH' then
+    v_warnings:=v_warnings||jsonb_build_array(v_validation_status);
+  end if;
 
   return v_source||jsonb_build_object(
     'source_final_price',v_source->'final_price',
     'source_total_taxes',v_source->'total_taxes',
     'source_tax_breakdown',v_source->'tax_breakdown',
+    'base_price',round(v_base,2),
     'total_taxes',round(v_ipi,2),
     'final_price',round(v_base,2)+round(v_ipi,2),
+    'ipi_rate',v_engine->'ipi_rate',
     'ipi_amount',v_ipi,
+    'own_icms_amount',v_engine->'own_icms_amount',
     'icms_st_amount',0,
     'pis_amount',0,
     'cofins_amount',0,
@@ -131,9 +169,24 @@ begin
     'has_st',false,
     'status','OK_SEM_ST',
     'warnings',v_warnings,
-    'price_source','EXCEL_ROUTE_PRICE_SP_IPI_ONLY',
-    'calculation_profile','SP_IPI_ONLY',
+    'price_source','CRM_FISCAL_ENGINE_SP_IPI_ONLY',
+    'calculation_profile','CRM_SP_IPI_ONLY',
     'calculation_method','BASE_PLUS_IPI',
+    'calculation_rule_source','CRM_FISCAL_RULE',
+    'fiscal_rule_id',v_engine->'fiscal_rule_id',
+    'fiscal_rule_version',v_engine->'fiscal_rule_version',
+    'rule_valid_from',v_engine->'rule_valid_from',
+    'rule_valid_until',v_engine->'rule_valid_until',
+    'calculated_at',now(),
+    'validation_source','EXCEL_ROUTE_PRICE',
+    'validation_status',v_validation_status,
+    'validation_excel_base_price',v_excel_base,
+    'validation_excel_ipi_amount',v_excel_ipi,
+    'validation_excel_ipi_only_price',v_excel_ipi_only_price,
+    'validation_base_delta',case when v_excel_base is null then null else round(v_base-v_excel_base,6) end,
+    'validation_ipi_delta',case when v_excel_ipi is null then null else round(v_ipi-v_excel_ipi,6) end,
+    'validation_final_delta',case when v_excel_ipi_only_price is null then null
+      else round((round(v_base,2)+round(v_ipi,2))-v_excel_ipi_only_price,6) end,
     'tax_policy_applied',true,
     'tax_policy_code',v_policy.code,
     'tax_policy_effective_from',v_policy.effective_from,
@@ -247,7 +300,7 @@ begin
       ) calc
       from public.order_items i
       join public.branches b on b.code=v_origin and b.active
-      join public.product_route_prices rp on rp.product_code=i.codigo
+      left join public.product_route_prices rp on rp.product_code=i.codigo
         and rp.origin_branch_id=b.id and rp.route=v_origin||'-'||v_destination
       where i.order_id=target_id
     )
@@ -271,7 +324,7 @@ begin
       ) calc
       from public.order_items i
       join public.branches b on b.code=v_origin and b.active
-      join public.product_route_prices rp on rp.product_code=i.codigo
+      left join public.product_route_prices rp on rp.product_code=i.codigo
         and rp.origin_branch_id=b.id and rp.route=v_origin||'-'||v_destination
       where i.order_id=target_id
     )
@@ -307,7 +360,7 @@ begin
       ) calc
       from public.quotation_items i
       join public.branches b on b.code=v_origin and b.active
-      join public.product_route_prices rp on rp.product_code=i.codigo
+      left join public.product_route_prices rp on rp.product_code=i.codigo
         and rp.origin_branch_id=b.id and rp.route=v_origin||'-'||v_destination
       where i.quotation_id=target_id
     )
@@ -331,7 +384,7 @@ begin
       ) calc
       from public.quotation_items i
       join public.branches b on b.code=v_origin and b.active
-      join public.product_route_prices rp on rp.product_code=i.codigo
+      left join public.product_route_prices rp on rp.product_code=i.codigo
         and rp.origin_branch_id=b.id and rp.route=v_origin||'-'||v_destination
       where i.quotation_id=target_id
     )

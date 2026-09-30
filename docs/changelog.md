@@ -4,13 +4,16 @@
 
 - foi criada uma política comercial datada para a rota SP→SP: desde
   01/10/2026, preço operacional é preço-base + IPI, sem ICMS-ST;
-- o preço consolidado importado do Excel não é alterado: valor, tributos e
-  memória originais permanecem disponíveis no snapshot de origem;
+- o motor fiscal do CRM é a fonte autoritativa da base, alíquota, regra e IPI;
+- o preço consolidado importado do Excel não é alterado nem utilizado como
+  preço operacional: serve somente para comparação, divergência e auditoria;
+- a ausência temporária da referência Excel não impede o cálculo quando o
+  motor do CRM possui base, regra vigente e IPI válidos;
 - pedidos, cotações, conversões e o Portal B2B passam pelo mesmo ajuste, sem
   permitir que uma leitura direta do preço antigo recoloque a ST;
 - pedidos anteriores à vigência não são recalculados retroativamente;
-- cada item novo registra código, vigência, motivo e valores anteriores da
-  política, e uma falha de base/IPI bloqueia o preço em vez de presumir zero;
+- cada item novo registra código, vigência, regra do CRM, comparação com o
+  Excel e diferenças; falha de base/regra/IPI no CRM bloqueia o preço;
 - a data comercial usa explicitamente o fuso `America/Sao_Paulo`, evitando
   ativação antecipada pela data UTC do banco;
 - a alteração possui rollback próprio e regressão de antes/depois da vigência.

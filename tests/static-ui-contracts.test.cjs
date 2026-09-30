@@ -510,11 +510,15 @@ test('SP commercial orders switch to base plus IPI on 2026-10-01 without mutatin
   assert.match(migration, /'source_final_price',v_source->'final_price'/);
   assert.match(migration, /'final_price',round\(v_base,2\)\+round\(v_ipi,2\)/);
   assert.match(migration, /'icms_st_amount',0/);
+  assert.match(migration, /calculate_product_price_crm_rules/);
+  assert.match(migration, /'price_source','CRM_FISCAL_ENGINE_SP_IPI_ONLY'/);
+  assert.match(migration, /'validation_source','EXCEL_ROUTE_PRICE'/);
   assert.match(migration, /normalize_document_tax_policy\('pedido'/);
   assert.match(migration, /b2b_create_document_raw_090/);
   assert.doesNotMatch(migration, /update public\.product_route_prices set/);
   assert.match(regression, /POLITICA_SP_ATIVADA_ANTES_DA_VIGENCIA/);
   assert.match(regression, /POLITICA_SP_ALTEROU_OUTRA_ROTA/);
+  assert.match(regression, /PLANILHA_VIROU_DEPENDENCIA_OPERACIONAL/);
 });
 
 test('OneDrive synchronization blocks workbooks with missing search formulas', () => {

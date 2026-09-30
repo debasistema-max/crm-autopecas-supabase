@@ -17,8 +17,11 @@ permaneciam apenas no Git, aguardando backup e regressões controladas.
 
 A migration 090 adiciona uma política comercial datada sem modificar a tabela
 de preços consolidados do Excel. Para SP→SP, documentos criados a partir de
-01/10/2026 usam somente base + IPI. O resultado grava a política no snapshot
-fiscal do item; documentos criados antes da vigência permanecem inalterados.
+01/10/2026 usam somente base + IPI calculados pelas regras vigentes do motor
+fiscal do CRM. O resultado do Excel é apenas uma referência de validação:
+`MATCH`, `MISMATCH`, incompleta ou ausente. O resultado grava a política, a
+regra e as diferenças no snapshot fiscal do item; documentos criados antes da
+vigência permanecem inalterados.
 
 A definição real de `resolve_fiscal_tax_rule` foi recuperada por introspecção
 somente leitura e considerada nos testes de resolução histórica. Dumps de
