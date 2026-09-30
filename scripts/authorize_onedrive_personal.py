@@ -8,7 +8,9 @@ It is never printed or written to disk.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
+import re
 import subprocess
 import time
 import urllib.error
@@ -18,7 +20,8 @@ import urllib.request
 
 AUTHORITY = "https://login.microsoftonline.com/consumers/oauth2/v2.0"
 GRAPH_ROOT = "https://graph.microsoft.com/v1.0"
-SCOPES = "offline_access Files.ReadWrite.AppFolder"
+SCOPES = "offline_access https://graph.microsoft.com/Files.ReadWrite"
+GRAPH_AUDIENCES = {"00000003-0000-0000-c000-000000000000", "https://graph.microsoft.com"}
 
 
 def post_form(url: str, data: dict[str, str]) -> dict:
@@ -67,32 +70,104 @@ def authorize(client_id: str) -> tuple[str, str]:
     raise RuntimeError("AUTORIZACAO_EXPIRADA")
 
 
-def verify_workbook(access_token: str, workbook_name: str) -> None:
+def validate_access_token(access_token: str) -> None:
+    if not access_token.strip():
+        raise RuntimeError("ACCESS_TOKEN_INVALIDO")
+    # Microsoft personal accounts can return opaque access tokens. In that case
+    # there is no payload to inspect locally; the following Graph request is the
+    # authoritative audience/scope validation and fails closed if access is wrong.
+    if access_token.count(".") != 2:
+        return
+    try:
+        payload_part = access_token.split(".")[1]
+        payload = json.loads(base64.urlsafe_b64decode(payload_part + "=" * (-len(payload_part) % 4)))
+    except (IndexError, ValueError, json.JSONDecodeError) as error:
+        raise RuntimeError("ACCESS_TOKEN_INVALIDO") from error
+    audience = str(payload.get("aud") or "")
+    scopes = set(str(payload.get("scp") or "").split())
+    if audience not in GRAPH_AUDIENCES:
+        raise RuntimeError("ACCESS_TOKEN_PUBLICO_INCORRETO")
+    if "Files.ReadWrite" not in scopes:
+        raise RuntimeError("ACCESS_TOKEN_SEM_FILES_READWRITE")
+
+
+def graph_error_detail(error: urllib.error.HTTPError) -> str:
+    code = "UNKNOWN"
+    message = ""
+    try:
+        body = json.loads(error.read() or b"{}")
+        raw_error = body.get("error") or {}
+        if isinstance(raw_error, dict):
+            code = str(raw_error.get("code") or code)
+            message = str(raw_error.get("message") or "")
+        else:
+            code = str(raw_error or code)
+    except (json.JSONDecodeError, UnicodeDecodeError, AttributeError):
+        pass
+    message = re.sub(r"[\w.+-]+@[\w.-]+", "<email>", message)
+    message = re.sub(r"\b[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}\b", "<id>", message)
+    message = " ".join(message.split())[:240]
+    return f"HTTP_{error.code}_{code}" + (f"_{message}" if message else "")
+
+
+def normalize_folder_path(folder_path: str) -> str:
+    normalized = folder_path.strip().strip("/")
+    parts = normalized.split("/")
+    if not normalized or "\\" in normalized or any(part in {"", ".", ".."} for part in parts):
+        raise RuntimeError("PASTA_ONEDRIVE_INVALIDA")
+    return "/".join(parts)
+
+
+def get_sync_folder(access_token: str, folder_path: str) -> dict:
+    headers = {"Authorization": f"Bearer {access_token}"}
+    encoded_path = urllib.parse.quote(normalize_folder_path(folder_path), safe="/")
+    folder_url = f"{GRAPH_ROOT}/me/drive/root:/{encoded_path}?$select=id,name,folder"
+    try:
+        with urllib.request.urlopen(
+            urllib.request.Request(folder_url, headers=headers), timeout=60
+        ) as response:
+            folder = json.loads(response.read())
+    except urllib.error.HTTPError as error:
+        raise RuntimeError(f"PASTA_ONEDRIVE_INACESSIVEL:{graph_error_detail(error)}") from error
+    if folder.get("folder") is None or not folder.get("id"):
+        raise RuntimeError("PASTA_ONEDRIVE_NAO_ENCONTRADA")
+    return folder
+
+
+def verify_workbook(
+    access_token: str,
+    workbook_name: str,
+    folder_path: str,
+    wait_seconds: int = 0,
+) -> None:
     if not workbook_name.lower().endswith(".xlsx"):
         raise RuntimeError("PLANILHA_INVALIDA")
     headers = {"Authorization": f"Bearer {access_token}"}
-    folder_fields = urllib.parse.quote("id,name,folder", safe=",")
-    try:
-        with urllib.request.urlopen(urllib.request.Request(
-            f"{GRAPH_ROOT}/me/drive/special/approot?$select={folder_fields}", headers=headers
-        ), timeout=60) as response:
-            app_folder = json.loads(response.read())
-    except urllib.error.HTTPError as error:
-        raise RuntimeError(f"APP_FOLDER_INACESSIVEL:HTTP_{error.code}") from error
-    if app_folder.get("folder") is None or not app_folder.get("id"):
-        raise RuntimeError("APP_FOLDER_NAO_ENCONTRADA")
-    folder_id = urllib.parse.quote(str(app_folder["id"]), safe="")
+    folder = get_sync_folder(access_token, folder_path)
+    folder_id = urllib.parse.quote(str(folder["id"]), safe="")
     fields = urllib.parse.quote("id,name,size,file", safe=",")
-    try:
-        with urllib.request.urlopen(urllib.request.Request(
-            f"{GRAPH_ROOT}/me/drive/items/{folder_id}/children?$select={fields}", headers=headers
-        ), timeout=60) as response:
-            items = json.loads(response.read()).get("value", [])
-    except urllib.error.HTTPError as error:
-        raise RuntimeError(f"APP_FOLDER_INACESSIVEL:HTTP_{error.code}") from error
-    matches = [item for item in items if item.get("name") == workbook_name and item.get("file")]
-    if len(matches) != 1 or int(matches[0].get("size") or 0) <= 0:
-        raise RuntimeError("PLANILHA_EXCLUSIVA_NAO_ENCONTRADA")
+    deadline = time.monotonic() + max(wait_seconds, 0)
+    announced = False
+    while True:
+        try:
+            with urllib.request.urlopen(urllib.request.Request(
+                f"{GRAPH_ROOT}/me/drive/items/{folder_id}/children?$select={fields}", headers=headers
+            ), timeout=60) as response:
+                items = json.loads(response.read()).get("value", [])
+        except urllib.error.HTTPError as error:
+            raise RuntimeError(f"PASTA_ONEDRIVE_INACESSIVEL:HTTP_{error.code}") from error
+        matches = [item for item in items if item.get("name") == workbook_name and item.get("file")]
+        if len(matches) == 1 and int(matches[0].get("size") or 0) > 0:
+            return
+        if time.monotonic() >= deadline:
+            raise RuntimeError("PLANILHA_EXCLUSIVA_NAO_ENCONTRADA")
+        if not announced:
+            print(
+                f"Copie {workbook_name} para OneDrive/{normalize_folder_path(folder_path)}. Aguardando...",
+                flush=True,
+            )
+            announced = True
+        time.sleep(5)
 
 
 def store_github_secret(repo: str, refresh_token: str) -> None:
@@ -107,9 +182,16 @@ def main() -> None:
     parser.add_argument("--client-id", required=True)
     parser.add_argument("--repo", required=True)
     parser.add_argument("--workbook-name", required=True)
+    parser.add_argument("--folder-path", required=True)
     args = parser.parse_args()
     access_token, refresh_token = authorize(args.client_id)
-    verify_workbook(access_token, args.workbook_name)
+    validate_access_token(access_token)
+    verify_workbook(
+        access_token,
+        args.workbook_name,
+        args.folder_path,
+        wait_seconds=900,
+    )
     store_github_secret(args.repo, refresh_token)
     print("Autorização de backup validada; token salvo no GitHub Secrets sem ser exibido.")
 

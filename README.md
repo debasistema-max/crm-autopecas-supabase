@@ -81,10 +81,13 @@ tratado separadamente: na última auditoria, `001-081` estavam aplicadas e
 
 ## OneDrive pessoal
 
-A configuração alvo usa fluxo de dispositivo, `offline_access` e
-`Files.ReadWrite.AppFolder`. A planilha e os backups ficam dentro da pasta do
-aplicativo. A agenda permanece desativada enquanto `DATA_SYNC_ENABLED` não for
-explicitamente definido como `true` no executor privado.
+A configuração para a conta Microsoft pessoal exclusiva do CRM usa fluxo de
+dispositivo, `offline_access` e `Files.ReadWrite`. Como esse escopo alcança os
+arquivos da conta autenticada, a conta não deve guardar documentos particulares.
+O executor restringe o uso à pasta configurada em `ONEDRIVE_FOLDER_PATH`, ao nome
+exato da planilha e à subpasta gerenciada de backups. A agenda permanece
+desativada enquanto `DATA_SYNC_ENABLED` não for explicitamente definido como
+`true` no executor privado.
 
 Consulte [docs/data-sync.md](docs/data-sync.md) para o contrato operacional e
 [docs/testing.md](docs/testing.md) para as validações antes de publicar. O

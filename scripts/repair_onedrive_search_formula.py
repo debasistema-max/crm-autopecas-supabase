@@ -28,7 +28,7 @@ import sync_onedrive_personal as onedrive
 
 AUTHORITY = "https://login.microsoftonline.com/consumers/oauth2/v2.0"
 GRAPH_ROOT = "https://graph.microsoft.com/v1.0"
-SCOPES = "Files.ReadWrite.AppFolder"
+SCOPES = "Files.ReadWrite"
 CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 WORKBOOK_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 OFFICE_REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"

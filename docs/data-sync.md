@@ -165,18 +165,20 @@ Antes de contatar o adapter, a Edge Function valida a sessão com `auth.getUser(
 
 É necessário registrar gratuitamente um aplicativo Microsoft que aceite contas
 pessoais, habilitar o fluxo delegado e consentir somente os escopos
-`offline_access` e `Files.ReadWrite.AppFolder`. O escopo limita o Microsoft
-Graph à pasta exclusiva do aplicativo; a escrita é necessária somente para as
-versões de backup. Use uma conta Microsoft exclusiva para a integração.
+`offline_access` e `Files.ReadWrite`. O escopo permite leitura e gravação nos
+arquivos da conta autenticada; por isso, use uma conta Microsoft exclusiva para
+a integração, sem documentos particulares.
 
-Após o consentimento, o Graph cria a pasta do aplicativo em
-`OneDrive/Apps/IPS CRM Excel Sync`. Copie a planilha mestre para essa pasta. O
-executor resolve somente `/me/drive/special/approot`, sem listar a raiz da
-conta. Não gere link público e não coloque a planilha no repositório.
+Crie `OneDrive/IPS CRM Excel Sync` e copie a planilha mestre para essa pasta. O
+executor acessa diretamente apenas o caminho configurado, exige o nome exato da
+planilha e grava versões somente em `Backups CRM` dentro dessa pasta. Ele não
+lista a raiz da conta. Não gere link público e não coloque a planilha no
+repositório.
 
 Configure no GitHub, em Actions variables:
 
 - `MS_GRAPH_CLIENT_ID`;
+- `ONEDRIVE_FOLDER_PATH` (por padrão, `IPS CRM Excel Sync`);
 - `ONEDRIVE_WORKBOOK_NAME`;
 - `DATA_SYNC_EDGE_URL`.
 - `DATA_SYNC_ENABLED=true` somente depois da homologação ponta a ponta.

@@ -37,7 +37,7 @@ AUDIT_SPEC.loader.exec_module(excel_formula_audit)
 
 GRAPH_ROOT = "https://graph.microsoft.com/v1.0"
 TOKEN_URL = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token"
-GRAPH_SCOPE = "offline_access Files.ReadWrite.AppFolder"
+GRAPH_SCOPE = "offline_access https://graph.microsoft.com/Files.ReadWrite"
 MAX_WORKBOOK_BYTES = 300 * 1024 * 1024
 CHUNK_ROWS = 500
 BACKUP_FOLDER_NAME = "Backups CRM"
@@ -148,16 +148,24 @@ def _validate_workbook_match(items: list[dict[str, Any]], filename: str) -> dict
     return item
 
 
-def locate_sync_folder(token: str) -> dict[str, Any]:
-    fields = urllib.parse.quote("id,name,folder", safe=",")
-    folder = graph_json(f"/me/drive/special/approot?$select={fields}", token)
+def normalize_folder_path(folder_path: str) -> str:
+    normalized = folder_path.strip().strip("/")
+    parts = normalized.split("/")
+    if not normalized or "\\" in normalized or any(part in {"", ".", ".."} for part in parts):
+        raise SyncError("PASTA_ONEDRIVE_INVALIDA")
+    return "/".join(parts)
+
+
+def locate_sync_folder(token: str, folder_path: str) -> dict[str, Any]:
+    encoded_path = urllib.parse.quote(normalize_folder_path(folder_path), safe="/")
+    folder = graph_json(f"/me/drive/root:/{encoded_path}?$select=id,name,folder", token)
     if folder.get("folder") is None or not str(folder.get("id") or ""):
-        raise SyncError("APP_FOLDER_NAO_ENCONTRADA")
+        raise SyncError("PASTA_ONEDRIVE_NAO_ENCONTRADA")
     return folder
 
 
-def locate_workbook(token: str, filename: str) -> dict[str, Any]:
-    folder = locate_sync_folder(token)
+def locate_workbook(token: str, folder_path: str, filename: str) -> dict[str, Any]:
+    folder = locate_sync_folder(token, folder_path)
     folder_id = urllib.parse.quote(str(folder.get("id") or ""), safe="")
     if not folder_id:
         raise SyncError("PASTA_EXCLUSIVA_NAO_ENCONTRADA")
@@ -229,9 +237,9 @@ def upload_backup(token: str, folder_id: str, filename: str, source: Path) -> di
     return result
 
 
-def create_version_backup(token: str, workbook_name: str,
+def create_version_backup(token: str, folder_path: str, workbook_name: str,
                           source: Path, source_updated_at: str, file_hash: str) -> dict[str, Any]:
-    sync_folder = locate_sync_folder(token)
+    sync_folder = locate_sync_folder(token, folder_path)
     backup_folder = ensure_backup_folder(token, str(sync_folder["id"]))
     backup_id = urllib.parse.quote(str(backup_folder.get("id") or ""), safe="")
     if not backup_id:
@@ -379,11 +387,12 @@ def process_batch(edge_url: str, secret: str, batch_id: str,
 def synchronize() -> dict[str, Any]:
     client_id = required_env("MS_GRAPH_CLIENT_ID")
     refresh_token = required_env("MS_GRAPH_REFRESH_TOKEN")
+    folder_path = required_env("ONEDRIVE_FOLDER_PATH")
     workbook_name = required_env("ONEDRIVE_WORKBOOK_NAME")
     edge_url = required_env("DATA_SYNC_EDGE_URL")
     sync_secret = required_env("DATA_SYNC_SCHEDULER_SECRET")
     token = access_token(client_id, refresh_token)
-    before = locate_workbook(token, workbook_name)
+    before = locate_workbook(token, folder_path, workbook_name)
 
     with tempfile.TemporaryDirectory(prefix="ips-excel-sync-") as temp_dir:
         source = Path(temp_dir, "master.xlsx")
@@ -403,6 +412,7 @@ def synchronize() -> dict[str, Any]:
         payload = excel_payload.build(source, str(before.get("lastModifiedDateTime") or ""))
         backup = create_version_backup(
             token,
+            folder_path,
             workbook_name,
             source,
             str(payload["source_updated_at"]),

@@ -140,14 +140,16 @@ test('Data Center is wired without frontend secrets and keeps manual imports', (
   assert.doesNotMatch(smoke, /\b(?:fetch|XMLHttpRequest|createClient)\s*\(/);
 });
 
-test('personal OneDrive runner is server-only, chunked and backup-scoped', () => {
+test('personal OneDrive runner is server-only, chunked and fixed-folder-scoped', () => {
   const runner = read('scripts/sync_onedrive_personal.py');
   const edge = read('supabase/functions/excel-sync/index.ts');
   assert.equal(fs.existsSync(path.join(repoRoot, '.github/workflows/excel-sync.yml')), false,
     'o executor OneDrive deve permanecer no repositório privado');
-  assert.match(runner, /offline_access Files\.ReadWrite\.AppFolder/);
-  assert.match(runner, /\/me\/drive\/special\/approot/);
+  assert.match(runner, /Files\.ReadWrite"/);
+  assert.match(runner, /ONEDRIVE_FOLDER_PATH/);
+  assert.match(runner, /\/me\/drive\/root:\//);
   assert.doesNotMatch(runner, /\/me\/drive\/root\/children/);
+  assert.match(runner, /PASTA_ONEDRIVE_INVALIDA/);
   assert.match(runner, /BACKUP_FOLDER_NAME = "Backups CRM"/);
   assert.match(runner, /BACKUP_RETENTION = 30/);
   assert.match(runner, /"If-None-Match": "\*"/);
@@ -509,7 +511,7 @@ test('OneDrive synchronization blocks workbooks with missing search formulas', (
 
 test('one-time OneDrive formula repair is scoped and concurrency-safe', () => {
   const repair = read('scripts/repair_onedrive_search_formula.py');
-  assert.match(repair, /SCOPES = "Files\.ReadWrite\.AppFolder"/);
+  assert.match(repair, /SCOPES = "Files\.ReadWrite"/);
   assert.doesNotMatch(repair, /offline_access/);
   assert.match(repair, /"If-Match": str\(item\.get\("eTag"\)/);
   assert.match(repair, /Pesquisa Marcas/);

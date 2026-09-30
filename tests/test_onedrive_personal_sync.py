@@ -24,7 +24,7 @@ class OneDrivePersonalSyncTest(unittest.TestCase):
                 {"id": "right", "name": "master.xlsx", "size": 100, "file": {"mimeType": "xlsx"}},
         ]}]
         with patch.object(MODULE, "graph_json", side_effect=responses):
-            item = MODULE.locate_workbook("token", "master.xlsx")
+            item = MODULE.locate_workbook("token", "IPS CRM Excel Sync", "master.xlsx")
         self.assertEqual(item["id"], "right")
 
     def test_locate_resolves_exact_folder_to_item_id(self):
@@ -32,10 +32,14 @@ class OneDrivePersonalSyncTest(unittest.TestCase):
                 {"id": "right", "name": "master.xlsx", "size": 100, "file": {"mimeType": "xlsx"}},
         ]}]
         with patch.object(MODULE, "graph_json", side_effect=responses) as graph:
-            item = MODULE.locate_workbook("token", "master.xlsx")
+            item = MODULE.locate_workbook("token", "IPS CRM Excel Sync", "master.xlsx")
         self.assertEqual(item["id"], "right")
-        self.assertIn("/me/drive/special/approot", graph.call_args_list[0].args[0])
+        self.assertIn("/me/drive/root:/IPS%20CRM%20Excel%20Sync", graph.call_args_list[0].args[0])
         self.assertIn("/me/drive/items/folder-id/children", graph.call_args.args[0])
+
+    def test_folder_path_rejects_traversal(self):
+        with self.assertRaisesRegex(MODULE.SyncError, "PASTA_ONEDRIVE_INVALIDA"):
+            MODULE.normalize_folder_path("../segredos")
 
     def test_edge_uses_only_dedicated_scheduler_secret(self):
         with patch.object(MODULE, "request_json", return_value={"ok": True}) as request:
@@ -84,7 +88,7 @@ class OneDrivePersonalSyncTest(unittest.TestCase):
                 patch.object(MODULE, "upload_backup") as upload, \
                 patch.object(MODULE, "request_json") as request:
             result = MODULE.create_version_backup(
-                "token", "master.xlsx", Path("master.xlsx"),
+                "token", "IPS CRM Excel Sync", "master.xlsx", Path("master.xlsx"),
                 "2026-09-25T14:08:53+00:00", "b" * 64,
             )
         self.assertFalse(result["created"])
@@ -95,6 +99,7 @@ class OneDrivePersonalSyncTest(unittest.TestCase):
     def test_graph_timestamp_overrides_download_mtime(self):
         with patch.dict(os.environ, {
             "MS_GRAPH_CLIENT_ID": "client", "MS_GRAPH_REFRESH_TOKEN": "refresh",
+            "ONEDRIVE_FOLDER_PATH": "IPS CRM Excel Sync",
             "ONEDRIVE_WORKBOOK_NAME": "master.xlsx", "DATA_SYNC_EDGE_URL": "https://example.test/sync",
             "DATA_SYNC_SCHEDULER_SECRET": "sync-secret",
         }, clear=True), patch.object(MODULE, "access_token", return_value="access"), \
