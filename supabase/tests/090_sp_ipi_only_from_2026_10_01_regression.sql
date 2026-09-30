@@ -36,10 +36,12 @@ begin
     interstate_icms_rate,internal_icms_rate,mva_rate,ipi_rate,
     pis_rate,cofins_rate,fcp_rate,base_reduction_rate,
     freight_rate,insurance_rate,other_expenses_rate,has_st,
-    resale_include_own_icms,effective_from,source
+    resale_include_own_icms,effective_from,source,
+    lifecycle_status,review_required_at,active
   ) values(
     '99000090','SP','SP','VENDA','REVENDA',
-    0.12,0.18,0.40,0.0325,0,0,0,0,0,0,0,true,false,date '2026-01-01','TEST'
+    0.12,0.18,0.40,0.0325,0,0,0,0,0,0,0,true,false,date '2026-01-01','TEST',
+    'REVIEW_REQUIRED',now(),true
   );
 
   v_before:=public.apply_commercial_tax_policy(v_source,'SP','SP',date '2026-09-30');
