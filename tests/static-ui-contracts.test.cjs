@@ -538,6 +538,18 @@ test('first OneDrive sync repairs only the legacy no-op footprint and keeps same
   assert.match(insertConflictRepair, /s\.status<>'error'/);
 });
 
+test('PR-SP uses the versioned PR-SC route result without changing other routes', () => {
+  const migration = read('supabase/migrations/093_pr_sp_uses_pr_sc_route.sql');
+  const regression = read('supabase/tests/093_pr_sp_uses_pr_sc_route_regression.sql');
+  assert.match(migration, /'PR_SP_EQUALS_PR_SC_2026_10_01','PR','SP','PR','SC'/);
+  assert.match(migration, /get_product_commercial_price_raw_093/);
+  assert.match(migration, /'route_alias_source_route',v_source_route/);
+  assert.match(migration, /'price_source','CRM_ROUTE_ALIAS'/);
+  assert.match(migration, /ROTA_PR_SP_USA_REGRA_PR_SC/);
+  assert.match(regression, /PR_SP_DIVERGIU_DE_PR_SC/);
+  assert.match(regression, /ALIAS_PR_SP_ALTEROU_OUTRA_ROTA/);
+});
+
 test('OneDrive synchronization blocks workbooks with missing search formulas', () => {
   const audit = read('scripts/audit_excel_formula_contract.py');
   const runner = read('scripts/sync_onedrive_personal.py');
