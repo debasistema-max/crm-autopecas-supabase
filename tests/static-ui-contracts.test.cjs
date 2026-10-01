@@ -550,6 +550,16 @@ test('PR-SP uses the versioned PR-SC route result without changing other routes'
   assert.match(regression, /ALIAS_PR_SP_ALTEROU_OUTRA_ROTA/);
 });
 
+test('SP fiscal policy blocks prices that do not match the Excel reference', () => {
+  const migration = read('supabase/migrations/094_block_sp_ipi_without_excel_match.sql');
+  assert.match(migration, /validation_status/);
+  assert.match(migration, /<>'MATCH'/);
+  assert.match(migration, /PRECO_FISCAL_INDISPONIVEL/);
+  assert.match(migration, /CRM_FISCAL_ENGINE_BLOCKED/);
+  assert.match(migration, /VALIDACAO_FISCAL_PENDENTE/);
+  assert.match(migration, /tax_policy_validation_blocked/);
+});
+
 test('OneDrive synchronization blocks workbooks with missing search formulas', () => {
   const audit = read('scripts/audit_excel_formula_contract.py');
   const runner = read('scripts/sync_onedrive_personal.py');
