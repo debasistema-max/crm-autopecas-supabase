@@ -23,6 +23,12 @@ fiscal do CRM. O resultado do Excel é apenas uma referência de validação:
 regra e as diferenças no snapshot fiscal do item; documentos criados antes da
 vigência permanecem inalterados.
 
+A migration 094 torna a política SP-SP fail-closed: o preço base + IPI só fica
+disponível quando a comparação com a referência Excel resultar em `MATCH`.
+NCM ausente, referência incompleta ou divergência bloqueiam o item sem alterar
+os dados-fonte importados. A liberação ocorre automaticamente quando a regra do
+motor e a referência vigente voltarem a coincidir.
+
 A definição real de `resolve_fiscal_tax_rule` foi recuperada por introspecção
 somente leitura e considerada nos testes de resolução histórica. Dumps de
 schema servem como evidência auxiliar e não substituem migrations versionadas.
