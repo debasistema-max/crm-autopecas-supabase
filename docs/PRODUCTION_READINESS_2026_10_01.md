@@ -98,6 +98,18 @@ da cobertura dos NCMs abaixo:
 6. repetir o relatorio e exigir zero `MISMATCH` e zero
    `PRECO_FISCAL_INDISPONIVEL` para os produtos liberados para venda.
 
+## Rota PR -> SP
+
+Por decisao comercial registrada em 01/10/2026, PR -> SP utiliza exatamente o
+mesmo resultado de PR -> SC. A migration `093` implementa um alias versionado,
+sem duplicar os 3.368 snapshots importados da planilha. O retorno conserva
+rastreabilidade (`route_alias_code` e `route_alias_source_route`) e apresenta a
+rota solicitada como PR-SP.
+
+O ensaio integral confirmou 3.368 produtos PR-SP disponiveis, com zero diferenca
+de preco final e zero diferenca de memoria fiscal em relacao a PR-SC. PR-PR,
+PR-SC e SP-SP permaneceram sem alias.
+
 ## Sequencia segura para a janela noturna
 
 1. Confirmar backup/PITR do Supabase e gerar novo dump imediatamente antes da janela.
