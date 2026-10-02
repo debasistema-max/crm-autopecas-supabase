@@ -407,6 +407,10 @@ test('B2B portal isolates customers and exposes only scoped RPCs', () => {
   assert.match(internalProducts, /data-yokomitsu-image/);
   assert.match(portal, /b2b_create_document/);
   assert.match(portal, /b2b_get_catalog_product_detail/);
+  assert.match(portal, /availableQuantity > 0 && availableQuantity < 20/);
+  assert.match(portal, /Confirmar: /);
+  assert.match(portal, /transferQuantity > 0 && transferQuantity < 20/);
+  assert.match(portal, /Confirmar via PR: /);
   assert.match(portal, /Veículo \/ ano/);
   assert.match(portal, /pendingSubmission/);
   assert.match(portal, /requestFingerprint/);
