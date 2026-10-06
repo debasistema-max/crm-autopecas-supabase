@@ -304,3 +304,12 @@ regressão foi atualizada para exigir combinação completa, linha correta e pre
 de rota; as imagens oficiais por código possuem fallback visual quando ausentes.
 O smoke visual passou em 9/9 cenários: B2B, administração B2B e catálogo interno
 em 390×844, 768×1024 e 1440×1000, sem overflow horizontal.
+
+## Regressão fiscal SP-SP — migration 098
+
+Em 06/10/2026, a migration e a regressão 098 passaram primeiro em uma única
+transação encerrada com `ROLLBACK`. Depois da aplicação exclusiva na
+homologação, a regressão foi repetida com `ROLLBACK` e confirmou 12 regras
+ativas, 2.122 preços com `validation_status=MATCH`, status `OK_SEM_ST` e zero
+divergência. O teste também confirma que as vigências manual e SAP do NCM
+`87089990` não permanecem sobrepostas.
