@@ -68,3 +68,23 @@ Não apagar a tabela de histórico nem os metadados para reverter comportamento.
 Caso seja necessário suspender a governança, criar migration posterior que
 desative os triggers/RPCs novos, preservando os snapshots. Nunca editar as
 migrations já aplicadas.
+
+## Confirmação fiscal SP-SP — lote 2
+
+Em 06/10/2026, a migration 098 foi aplicada somente na homologação. Doze NCMs
+em `REVIEW_REQUIRED` foram ativados depois de todos os 2.122 preços SP-SP
+atuais coincidirem com a referência Excel na tolerância de R$ 0,02. A regra
+manual legada de 5% do NCM `87089990` teve sua vigência encerrada em 24/08/2026;
+a regra SAP sucessora de 3,25% permanece vigente desde 25/08/2026. Nenhum
+registro histórico foi apagado.
+
+Após a aplicação, a rota SP-SP possui 20 NCMs ativos cobrindo 3.336 produtos,
+4 NCMs em revisão cobrindo 24 produtos e 3 NCMs sem regra cobrindo 8 produtos.
+A promoção para produção permanece pendente de autorização explícita.
+
+No mesmo dia, as migrations 091–094 pendentes foram ensaiadas com rollback e
+aplicadas atomicamente na homologação, que passou a ter a sequência 090–098
+completa. A migration 091 encontrou zero linhas legadas a reparar. Com o
+bloqueio fail-closed da 094 ativo, 3.287 preços SP-SP ficaram disponíveis por
+`MATCH`, 73 permaneceram bloqueados por `MISMATCH` e 8 por ausência de
+validação. A produção continuou sem a migration 098.

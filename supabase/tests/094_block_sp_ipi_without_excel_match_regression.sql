@@ -3,6 +3,59 @@ begin;
 do $$
 declare
   v_branch_sp uuid;
+  v_actor_id uuid;
+begin
+  select id into v_branch_sp from public.branches where code='SP' and active limit 1;
+  if v_branch_sp is null then raise exception 'FILIAL_SP_AUSENTE'; end if;
+
+  select id into v_actor_id
+  from public.profiles
+  where ativo and perfil::text='ADMIN'
+  order by case when usuario='admin' then 0 else 1 end,updated_at desc
+  limit 1;
+  if v_actor_id is null then raise exception 'ADMIN_ATIVO_NAO_ENCONTRADO'; end if;
+
+  insert into public.products(codigo,descricao,ncm,cest,ipi_rate,ipi_defined)
+  values('9900000094','TESTE BLOQUEIO VALIDACAO SP','99000094','9999999',0.0325,true)
+  on conflict(codigo) do update set ncm=excluded.ncm,cest=excluded.cest,
+    ipi_rate=excluded.ipi_rate,ipi_defined=true;
+
+  insert into public.product_branch_prices(
+    product_code,branch_id,sale_price,source,valid_from
+  )
+  values('9900000094',v_branch_sp,100,'MANUAL',date '2026-01-01')
+  on conflict(product_code,branch_id) do update set
+    sale_price=100,source='MANUAL',valid_from=date '2026-01-01';
+
+  perform set_config('app.fiscal_transition','1',true);
+  update public.fiscal_tax_rules set active=false
+  where ncm='99000094' and uf_origem='SP' and uf_destino='SP'
+    and operation_type='VENDA' and customer_type='REVENDA' and active;
+  insert into public.fiscal_tax_rules(
+    ncm,uf_origem,uf_destino,operation_type,customer_type,
+    interstate_icms_rate,internal_icms_rate,mva_rate,ipi_rate,
+    pis_rate,cofins_rate,fcp_rate,base_reduction_rate,
+    freight_rate,insurance_rate,other_expenses_rate,has_st,
+    resale_include_own_icms,effective_from,source,
+    lifecycle_status,legal_basis,change_reason,
+    validated_at,validated_by,activated_at,activated_by,
+    created_by,updated_by,active
+  ) values(
+    '99000094','SP','SP','VENDA','REVENDA',
+    0.12,0.18,0.40,0.0325,0,0,0,0,0,0,0,true,false,
+    date '2026-01-01','TEST','ACTIVE',
+    'Regra sintetica ativa para regressao da validacao Excel.',
+    'Teste transacional da migration 094.',
+    now(),v_actor_id,now(),v_actor_id,v_actor_id,v_actor_id,true
+  );
+end;
+$$;
+
+-- The fiscal calculator is STABLE. Keep fixture creation and assertions in
+-- separate statements so the calculator sees the synthetic rows in its
+-- statement snapshot while the outer transaction still rolls everything back.
+do $$
+declare
   v_match jsonb;
   v_mismatch jsonb;
   v_missing jsonb;
@@ -16,34 +69,6 @@ declare
     'price_source','EXCEL_ROUTE_PRICE'
   );
 begin
-  select id into v_branch_sp from public.branches where code='SP' and active limit 1;
-  if v_branch_sp is null then raise exception 'FILIAL_SP_AUSENTE'; end if;
-
-  insert into public.products(codigo,descricao,ncm,cest,ipi_rate,ipi_defined)
-  values('9900000094','TESTE BLOQUEIO VALIDACAO SP','99000094','9999999',0.0325,true)
-  on conflict(codigo) do update set ncm=excluded.ncm,cest=excluded.cest,
-    ipi_rate=excluded.ipi_rate,ipi_defined=true;
-
-  insert into public.product_branch_prices(product_code,branch_id,sale_price,source)
-  values('9900000094',v_branch_sp,100,'MANUAL')
-  on conflict(product_code,branch_id) do update set sale_price=100,source='MANUAL';
-
-  perform set_config('app.fiscal_transition','1',true);
-  update public.fiscal_tax_rules set active=false
-  where ncm='99000094' and uf_origem='SP' and uf_destino='SP'
-    and operation_type='VENDA' and customer_type='REVENDA' and active;
-  insert into public.fiscal_tax_rules(
-    ncm,uf_origem,uf_destino,operation_type,customer_type,
-    interstate_icms_rate,internal_icms_rate,mva_rate,ipi_rate,
-    pis_rate,cofins_rate,fcp_rate,base_reduction_rate,
-    freight_rate,insurance_rate,other_expenses_rate,has_st,
-    resale_include_own_icms,effective_from,source,
-    lifecycle_status,review_required_at,active
-  ) values(
-    '99000094','SP','SP','VENDA','REVENDA',
-    0.12,0.18,0.40,0.0325,0,0,0,0,0,0,0,true,false,
-    date '2026-01-01','TEST','REVIEW_REQUIRED',now(),true
-  );
 
   v_match:=public.apply_commercial_tax_policy(v_source,'SP','SP',date '2026-10-01');
   if v_match->>'status'<>'OK_SEM_ST'
