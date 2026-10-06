@@ -97,14 +97,47 @@
   color: var(--muted);
 }
 
-#loginForm {
+#loginForm,
+.login-secondary-form {
   display: grid;
   gap: 16px;
+}
+
+#loginForm[hidden],
+.login-secondary-form[hidden],
+.login-card__header[hidden] {
+  display: none;
+}
+
+.login-secondary-form h3,
+.login-secondary-form p {
+  margin: 0;
+}
+
+.login-secondary-form > p:not(.form-message) {
+  color: var(--muted);
+  line-height: 1.45;
 }
 
 #loginButton {
   width: 100%;
   margin-top: 4px;
+}
+
+.login-link-button {
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  font: inherit;
+  font-weight: 800;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.login-link-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .customer-portal-link {
@@ -127,7 +160,10 @@
     min-height: 100svh;
   }
   #loginForm input,
-  #loginButton {
+  .login-secondary-form input,
+  #loginButton,
+  #recoveryRequestButton,
+  #passwordResetButton {
     min-height: 46px;
     font-size: 16px;
   }

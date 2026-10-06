@@ -115,6 +115,23 @@ test('login retains browser credential autofill and labeled inputs', () => {
   assert.match(source, /id="loginMessage"[^>]*role="alert"/);
 });
 
+test('CRM login provides secure email password recovery with a mobile-friendly policy', () => {
+  const login = read('public/index.html');
+  const auth = read('public/js/auth.js');
+  assert.match(login, /id="forgotPasswordButton"/);
+  assert.match(login, /id="recoveryRequestForm"/);
+  assert.match(login, /id="passwordResetForm"/);
+  assert.match(login, /id="newPassword"[^>]+minlength="8"/);
+  assert.match(auth, /resetPasswordForEmail\(email, \{ redirectTo \}\)/);
+  assert.match(auth, /event === 'PASSWORD_RECOVERY'/);
+  assert.match(auth, /supabaseClient\.auth\.getSession\(\)/);
+  assert.match(auth, /updateUser\(\{ password \}\)/);
+  assert.match(auth, /password\.length < 8/);
+  assert.match(auth, /\!\/\[A-Za-z\]\//);
+  assert.match(auth, /\!\/\[0-9\]\//);
+  assert.match(auth, /supabaseClient\.auth\.signOut\(\)/);
+});
+
 test('Data Center is wired without frontend secrets and keeps manual imports', () => {
   const html = read('app.html');
   const app = read('js/app.js');
