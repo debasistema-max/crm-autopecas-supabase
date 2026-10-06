@@ -167,7 +167,8 @@ test('personal OneDrive runner is server-only, chunked and fixed-folder-scoped',
   assert.match(edge, /operation === 'commit'/);
   assert.match(edge, /PUSH_EXIGE_SEGREDO_DO_AGENDADOR/);
   assert.match(edge, /DATA_SYNC_GITHUB_TOKEN/);
-  assert.match(edge, /inputs: \{ mode: 'synchronize' \}/);
+  assert.match(edge, /inputs: \{ mode: 'synchronize', target \}/);
+  assert.match(edge, /env\('DATA_SYNC_TARGET'\)/);
   assert.match(edge, /actions\/workflows/);
   assert.doesNotMatch(edge, /env\('DATA_SYNC_ADAPTER_URL'\)/);
 });
