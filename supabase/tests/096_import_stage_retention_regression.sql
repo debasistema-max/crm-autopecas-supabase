@@ -8,13 +8,33 @@ declare
   v_active_stage uuid := gen_random_uuid();
   v_preview jsonb;
   v_execution jsonb;
+  v_terminal_at timestamptz;
 begin
+  -- Keep this regression isolated from real historical batches. The synthetic
+  -- committed batch is deliberately older than every existing terminal batch,
+  -- and the maintenance call is limited to that single oldest candidate.
+  select least(
+    coalesce(
+      min(coalesce(
+        finished_at,
+        committed_at,
+        failed_at,
+        last_attempt_completed_at,
+        created_at
+      )),
+      now() - interval '100 days'
+    ),
+    now() - interval '100 days'
+  ) - interval '1 day'
+  into v_terminal_at
+  from public.products_import_batches;
+
   insert into public.products_import_batches(
     id, created_at, import_type, source_name, state, status, summary
   ) values
     (
       v_committed_batch,
-      now() - interval '60 days',
+      v_terminal_at,
       'RETENTION_TEST',
       'TEST_096',
       'COMMITTED',
@@ -23,7 +43,7 @@ begin
     ),
     (
       v_active_batch,
-      now() - interval '60 days',
+      v_terminal_at,
       'RETENTION_TEST',
       'TEST_096',
       'DRAFT',
@@ -48,19 +68,20 @@ begin
     '{"stock": 2}'::jsonb
   );
 
-  select public.maintain_products_import_stage(7, 30, 0, 10, false, true)
+  select public.maintain_products_import_stage(7, 30, 0, 1, false, true)
   into v_preview;
 
   if (v_preview->>'candidate_batches')::integer <> 1
      or (v_preview->>'candidate_stage_rows')::integer <> 1
-     or (v_preview->>'deleted_stage_rows')::integer <> 0 then
+     or (v_preview->>'deleted_stage_rows')::integer <> 0
+     or not (v_preview->'batch_ids' @> to_jsonb(array[v_committed_batch])) then
     raise exception 'DRY_RUN_INCORRETO: %', v_preview;
   end if;
   if not exists(select 1 from public.products_import_stage where id = v_committed_stage) then
     raise exception 'DRY_RUN_REMOVEU_STAGING';
   end if;
 
-  select public.maintain_products_import_stage(7, 30, 0, 10, false, false)
+  select public.maintain_products_import_stage(7, 30, 0, 1, false, false)
   into v_execution;
 
   if (v_execution->>'deleted_stage_rows')::integer <> 1 then
