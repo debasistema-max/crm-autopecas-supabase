@@ -313,3 +313,9 @@ homologação, a regressão foi repetida com `ROLLBACK` e confirmou 12 regras
 ativas, 2.122 preços com `validation_status=MATCH`, status `OK_SEM_ST` e zero
 divergência. O teste também confirma que as vigências manual e SAP do NCM
 `87089990` não permanecem sobrepostas.
+
+Depois do alinhamento da homologação com as migrations 091–094, as regressões
+093, 094, 097 e 098 passaram individualmente, sempre com `ROLLBACK`. A massa
+sintética da regressão 094 foi atualizada para criar uma regra `ACTIVE`, usar
+preço-base vigente na data testada e separar a preparação da leitura feita por
+funções `STABLE`. Nenhum produto ou regra sintética permaneceu no banco.

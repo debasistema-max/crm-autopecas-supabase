@@ -81,3 +81,10 @@ registro histórico foi apagado.
 Após a aplicação, a rota SP-SP possui 20 NCMs ativos cobrindo 3.336 produtos,
 4 NCMs em revisão cobrindo 24 produtos e 3 NCMs sem regra cobrindo 8 produtos.
 A promoção para produção permanece pendente de autorização explícita.
+
+No mesmo dia, as migrations 091–094 pendentes foram ensaiadas com rollback e
+aplicadas atomicamente na homologação, que passou a ter a sequência 090–098
+completa. A migration 091 encontrou zero linhas legadas a reparar. Com o
+bloqueio fail-closed da 094 ativo, 3.287 preços SP-SP ficaram disponíveis por
+`MATCH`, 73 permaneceram bloqueados por `MISMATCH` e 8 por ausência de
+validação. A produção continuou sem a migration 098.
