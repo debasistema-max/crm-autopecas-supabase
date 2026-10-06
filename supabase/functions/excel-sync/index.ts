@@ -50,8 +50,12 @@ async function dispatchGithubSync() {
   const repository = env('DATA_SYNC_GITHUB_REPOSITORY');
   const workflow = Deno.env.get('DATA_SYNC_GITHUB_WORKFLOW')?.trim() || 'excel-sync.yml';
   const ref = Deno.env.get('DATA_SYNC_GITHUB_REF')?.trim() || 'main';
+  const target = env('DATA_SYNC_TARGET').toLowerCase();
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) {
     throw new Error('CONFIGURACAO_INVALIDA:DATA_SYNC_GITHUB_REPOSITORY');
+  }
+  if (!['homologacao', 'producao'].includes(target)) {
+    throw new Error('CONFIGURACAO_INVALIDA:DATA_SYNC_TARGET');
   }
 
   const endpoint = `https://api.github.com/repos/${repository}/actions/workflows/${encodeURIComponent(workflow)}/dispatches`;
@@ -64,7 +68,7 @@ async function dispatchGithubSync() {
       'X-GitHub-Api-Version': '2022-11-28',
       'User-Agent': 'ips-crm-data-sync'
     },
-    body: JSON.stringify({ ref, inputs: { mode: 'synchronize' } })
+    body: JSON.stringify({ ref, inputs: { mode: 'synchronize', target } })
   });
   if (!githubResponse.ok) {
     throw new Error(`GITHUB_DISPATCH_HTTP_${githubResponse.status}`);
