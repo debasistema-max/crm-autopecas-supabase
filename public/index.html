@@ -7,7 +7,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://brasilapi.com.br https://www.receitaws.com.br; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
   <title>Nova Empresa | Login</title>
   <link rel="stylesheet" href="css/theme.css?v=20260826-2">
-  <link rel="stylesheet" href="css/login.css?v=20260912-1">
+  <link rel="stylesheet" href="css/login.css?v=20261006-1">
 </head>
 <body class="login-page">
   <img src="assets/logo-neutral.svg" alt="" class="brand-watermark" data-company-logo-watermark aria-hidden="true">
@@ -37,7 +37,35 @@
           <input id="senha" name="senha" type="password" autocomplete="current-password" required>
         </label>
         <button class="btn btn-primary" id="loginButton" type="submit">Entrar</button>
+        <button class="login-link-button" id="forgotPasswordButton" type="button">Esqueci minha senha</button>
         <p id="loginMessage" class="form-message" role="alert"></p>
+      </form>
+
+      <form id="recoveryRequestForm" class="login-secondary-form" hidden>
+        <h3>Recuperar senha</h3>
+        <p>Informe o e-mail cadastrado no CRM. Enviaremos um link seguro para criar uma nova senha.</p>
+        <label>
+          E-mail
+          <input id="recoveryEmail" name="email" type="email" autocomplete="email" required>
+        </label>
+        <button class="btn btn-primary" id="recoveryRequestButton" type="submit">Enviar link</button>
+        <button class="login-link-button" data-back-to-login type="button">Voltar ao login</button>
+        <p id="recoveryRequestMessage" class="form-message" role="status" aria-live="polite"></p>
+      </form>
+
+      <form id="passwordResetForm" class="login-secondary-form" hidden>
+        <h3>Definir nova senha</h3>
+        <p>Use no mínimo 8 caracteres, incluindo pelo menos uma letra e um número.</p>
+        <label>
+          Nova senha
+          <input id="newPassword" name="new-password" type="password" autocomplete="new-password" minlength="8" maxlength="72" required>
+        </label>
+        <label>
+          Confirmar nova senha
+          <input id="confirmNewPassword" name="confirm-password" type="password" autocomplete="new-password" minlength="8" maxlength="72" required>
+        </label>
+        <button class="btn btn-primary" id="passwordResetButton" type="submit">Salvar nova senha</button>
+        <p id="passwordResetMessage" class="form-message" role="alert" aria-live="assertive"></p>
       </form>
       <a class="customer-portal-link" href="b2b/">Sou cliente — acessar Portal B2B</a>
     </section>
@@ -49,6 +77,6 @@
   <script src="js/supabase.js?v=20260701-2"></script>
   <script src="js/supabase_store.js?v=20260922-1"></script>
   <script src="js/company_settings.js?v=20260828-1"></script>
-  <script src="js/auth.js?v=20260815-1"></script>
+  <script src="js/auth.js?v=20261006-1"></script>
 </body>
 </html>
