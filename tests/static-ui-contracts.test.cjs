@@ -487,7 +487,8 @@ test('security hardening keeps secrets server-side and minimizes anonymous acces
 test('manual Excel parsing uses the patched, vendored SheetJS build', () => {
   const libraryPath = resolveFile('js/vendor/xlsx.full.min.js');
   const library = fs.readFileSync(libraryPath);
-  const hash = crypto.createHash('sha256').update(library).digest('hex');
+  const normalizedLibrary = library.toString('utf8').replace(/\r\n/g, '\n');
+  const hash = crypto.createHash('sha256').update(normalizedLibrary, 'utf8').digest('hex');
   assert.match(library.toString('utf8'), /version="0\.20\.3"/);
   assert.equal(hash, 'cc015130aa8521e7f088f88898eba949ccdcbfb38df0bd129b44b7273c3a6f41');
   assert.match(read('app.html'), /xlsx\.full\.min\.js\?v=0\.20\.3/);
