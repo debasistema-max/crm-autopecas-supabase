@@ -1,5 +1,18 @@
 # Changelog técnico
 
+## 2026-10-05 — portal do vendedor otimizado para celular
+
+- o perfil VENDEDOR ganhou uma apresentação própria inspirada no portal B2B,
+  sem alterar o fluxo dos perfis administrativos;
+- a tela inicial agora oferece boas-vindas e atalhos diretos para nova cotação,
+  novo pedido, consulta de produtos e atualização dos indicadores;
+- a navegação inferior do vendedor reúne Início, Produtos, Clientes, Cotações e
+  Pedidos, com alvos de toque maiores e indicação clara da área ativa;
+- menu lateral, cartões, cabeçalho e espaçamentos foram simplificados em telas
+  pequenas, preservando permissões, carteira de clientes e regras comerciais;
+- a revisão de produção altera somente arquivos estáticos do frontend, sem
+  migration, segredo ou modificação de dados.
+
 ## 2026-09-30 — SP sem ICMS-ST a partir de 01/10/2026
 
 - foi criada uma política comercial datada para a rota SP→SP: desde
