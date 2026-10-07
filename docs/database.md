@@ -43,6 +43,15 @@ schema servem como evidência auxiliar e não substituem migrations versionadas.
 - `quotation_items` e `order_items`: memória fiscal usada na operação;
 - `logs`: auditoria administrativa antes/depois.
 
+## Identidade visual da empresa
+
+A migration 099 cria o bucket publico `company-assets` somente para o logotipo
+que precisa aparecer antes do login. O navegador continua salvando apenas a URL
+publica em `company_settings.logo_url`; o arquivo nao ocupa o banco operacional.
+Somente ADMIN autenticado pode enviar ou excluir PNG, JPG e WebP na pasta
+`identity/`, com limite de 2 MB. A leitura publica se restringe ao bucket de
+ativos institucionais e nao inclui documentos ou anexos privados.
+
 ## Integridade da Fase 5B
 
 - regra em uso não pode ser editada diretamente;
