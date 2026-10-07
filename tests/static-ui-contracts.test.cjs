@@ -73,7 +73,7 @@ test('administrative templates preserve critical control IDs', () => {
   const contracts = {
     'js/users.js': ['userForm', 'userId', 'newUserProfile', 'newUserPassword', 'newUserActive', 'logsFilter', 'logsUser', 'logsAction'],
     'js/cadastros.js': ['cadastroSearch', 'cadastroStatusFilter', 'portalEmailPrincipal', 'portalReportFrom', 'portalReportTo'],
-    'js/company_settings.js': ['companySettingsForm', 'companyName', 'companyState', 'companyTimezone', 'companyLanguage'],
+    'js/company_settings.js': ['companySettingsForm', 'companyName', 'companyState', 'companyTimezone', 'companyLanguage', 'companyLogoFile', 'companyLogoPreview'],
     'js/tax_rules.js': ['taxRuleForm', 'taxRuleId', 'taxRuleNcm', 'taxRuleUfOrigem', 'taxRuleUfDestino', 'taxRuleMva',
       'taxRuleResaleMethod', 'taxRuleResaleIcmsSt', 'taxRuleResaleOwnIcms', 'taxRuleEffectiveFrom', 'taxRuleEffectiveTo']
   };
@@ -113,6 +113,24 @@ test('login retains browser credential autofill and labeled inputs', () => {
   assert.match(source, /id="senha"[^>]*type="password"[^>]*autocomplete="current-password"/);
   assert.match(source, /id="loginButton"[^>]*type="submit"/);
   assert.match(source, /id="loginMessage"[^>]*role="alert"/);
+});
+
+test('company identity uses an admin-only image upload instead of an editable logo URL', () => {
+  const settings = read('public/js/company_settings.js');
+  const migration = read('supabase/migrations/099_company_logo_storage.sql');
+  assert.match(settings, /id="companyLogoFile"[^>]+type="file"[^>]+accept="image\/png,image\/jpeg,image\/webp"/);
+  assert.doesNotMatch(settings, /id="companyLogoUrl"/);
+  assert.match(settings, /COMPANY_LOGO_MAX_BYTES = 2 \* 1024 \* 1024/);
+  assert.match(settings, /validateCompanyLogoFile\(file\)/);
+  assert.match(settings, /\.from\(COMPANY_LOGO_BUCKET\)[\s\S]+\.upload\(path, file/);
+  assert.match(settings, /getPublicUrl\(path\)/);
+  assert.match(settings, /removeManagedCompanyLogo\(previousLogoPath\)/);
+  assert.match(migration, /'company-assets',[\s\S]+true,[\s\S]+2097152/);
+  assert.match(migration, /'image\/jpeg'[\s\S]+'image\/png'[\s\S]+'image\/webp'/);
+  assert.match(migration, /for insert[\s\S]+to authenticated[\s\S]+public\.is_admin\(\)/);
+  assert.match(migration, /for delete[\s\S]+to authenticated[\s\S]+public\.is_admin\(\)/);
+  assert.equal((migration.match(/name like 'identity\/%'/g) || []).length, 2);
+  assert.doesNotMatch(migration, /service_role|grant\s+all/i);
 });
 
 test('CRM login provides secure email password recovery with a mobile-friendly policy', () => {
