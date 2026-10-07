@@ -115,6 +115,22 @@ test('login retains browser credential autofill and labeled inputs', () => {
   assert.match(source, /id="loginMessage"[^>]*role="alert"/);
 });
 
+test('login keeps the access card visible in portrait, landscape and desktop layouts', () => {
+  const html = read('public/index.html');
+  const css = read('public/css/login.css');
+  const auth = read('public/js/auth.js');
+  assert.match(html, /class="login-brand__lockup"/);
+  assert.match(html, /class="login-card__eyebrow">Área restrita/);
+  assert.match(html, /class="login-brand__status"/);
+  assert.doesNotMatch(html, /class="brand-watermark"/);
+  assert.match(css, /grid-template-columns: minmax\(0, 1fr\) minmax\(360px, 420px\)/);
+  assert.match(css, /@media \(max-width: 700px\)/);
+  assert.match(css, /@media \(min-width: 701px\) and \(max-height: 620px\)/);
+  assert.match(css, /\.customer-portal-link\[hidden\]/);
+  assert.match(auth, /cardHeader\.hidden = target !== 'login'/);
+  assert.match(auth, /customerPortalLink\.hidden = target !== 'login'/);
+});
+
 test('company identity uses an admin-only image upload instead of an editable logo URL', () => {
   const settings = read('public/js/company_settings.js');
   const migration = read('supabase/migrations/099_company_logo_storage.sql');

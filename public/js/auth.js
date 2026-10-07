@@ -52,6 +52,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const resetForm = document.getElementById('passwordResetForm');
   const recoveryMessage = document.getElementById('recoveryRequestMessage');
   const resetMessage = document.getElementById('passwordResetMessage');
+  const cardHeader = document.querySelector('.login-card__header');
+  const customerPortalLink = document.querySelector('.customer-portal-link');
   const hashParams = new URLSearchParams(location.hash.replace(/^#/, ''));
   const queryParams = new URLSearchParams(location.search);
   const isRecoveryLink = hashParams.get('type') === 'recovery' || queryParams.get('type') === 'recovery';
@@ -61,7 +63,8 @@ document.addEventListener('DOMContentLoaded', () => {
     form.hidden = target !== 'login';
     recoveryForm.hidden = target !== 'recovery';
     resetForm.hidden = target !== 'reset';
-    document.querySelector('.login-card__header').hidden = target === 'reset';
+    cardHeader.hidden = target !== 'login';
+    customerPortalLink.hidden = target !== 'login';
   };
 
   const cleanRecoveryUrl = () => {
@@ -163,7 +166,7 @@ document.addEventListener('DOMContentLoaded', () => {
     event.preventDefault();
     message.textContent = '';
     button.disabled = true;
-    button.textContent = 'Entrando...';
+    button.textContent = 'Acessando...';
     try {
       const usuario = document.getElementById('usuario').value;
       const senha = document.getElementById('senha').value;
@@ -178,7 +181,7 @@ document.addEventListener('DOMContentLoaded', () => {
       message.textContent = error.message;
     } finally {
       button.disabled = false;
-      button.textContent = 'Entrar';
+      button.textContent = 'Acessar CRM';
     }
   });
 });
