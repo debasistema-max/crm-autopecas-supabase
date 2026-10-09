@@ -246,7 +246,7 @@ test('sync report uses batch-scoped audited changes, readable values and escaped
   assert.match(target.innerHTML, /Preço-base/);
   assert.match(target.innerHTML, /<td>0<\/td>/);
   assert.match(target.innerHTML, /&lt;script&gt;bad&lt;\/script&gt;/);
-  assert.doesNotMatch(target.innerHTML, /<script>/);
+  assert.doesNotMatch(target.innerHTML, /<script\b/i);
   assert.equal(button.disabled, false);
   assert.equal(vm.runInContext("dataSyncAuditValue(null, 'stock_qty')", context), '—');
   assert.equal(vm.runInContext("dataSyncAuditField('future_field')", context), 'future_field');
