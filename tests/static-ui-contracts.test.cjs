@@ -220,6 +220,38 @@ test('Data Center is wired without frontend secrets and keeps manual imports', (
   assert.doesNotMatch(smoke, /\b(?:fetch|XMLHttpRequest|createClient)\s*\(/);
 });
 
+test('sync report uses batch-scoped audited changes, readable values and escaped content', async () => {
+  const target = { innerHTML: '', isConnected: true };
+  const button = { disabled: false, isConnected: true };
+  let requested;
+  const context = vm.createContext({
+    document: { getElementById: () => target, querySelector: () => button },
+    CrmUi: { renderState: () => '' },
+    escapeHtml: (value) => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
+    supabaseListDataSyncAudit: async (filters) => {
+      requested = filters;
+      return { rows: [
+        { product_code: '001', field_name: 'stock_qty', area: 'STOCK', old_value: 10, new_value: 0, batch_id: 'batch-1' },
+        { product_code: '001', field_name: 'base_price', area: 'BASE_PRICE', old_value: 100, new_value: 90, batch_id: 'batch-1' },
+        { product_code: '002', field_name: 'description', area: 'PRODUCT', old_value: null, new_value: '<script>bad</script>', batch_id: 'batch-1' }
+      ] };
+    }
+  });
+  vm.runInContext(read('public/js/data_sync.js'), context);
+  await vm.runInContext("loadDataSyncAudit({batch_id:'batch-1',area:'',product_code:''})", context);
+  assert.equal(requested.batch_id, 'batch-1');
+  assert.equal(requested.limit, 2000);
+  assert.match(target.innerHTML, /2 produtos · 3 alterações exibidas/);
+  assert.match(target.innerHTML, /Estoque/);
+  assert.match(target.innerHTML, /Preço-base/);
+  assert.match(target.innerHTML, /<td>0<\/td>/);
+  assert.match(target.innerHTML, /&lt;script&gt;bad&lt;\/script&gt;/);
+  assert.doesNotMatch(target.innerHTML, /<script>/);
+  assert.equal(button.disabled, false);
+  assert.equal(vm.runInContext("dataSyncAuditValue(null, 'stock_qty')", context), '—');
+  assert.equal(vm.runInContext("dataSyncAuditField('future_field')", context), 'future_field');
+});
+
 test('personal OneDrive runner is server-only, chunked and fixed-folder-scoped', () => {
   const runner = read('scripts/sync_onedrive_personal.py');
   const edge = read('supabase/functions/excel-sync/index.ts');
