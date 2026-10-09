@@ -135,6 +135,19 @@ test('login keeps the access card visible in portrait, landscape and desktop lay
 test('customer access and shared portal buttons keep strong visual contrast', () => {
   const loginCss = read('public/css/login.css');
   const themeCss = read('public/css/theme.css');
+  const loginScope = loginCss.match(/\.login-page\s*\{([^}]+)\}/)[1];
+  const textColor = loginScope.match(/--primary-strong:\s*(#[0-9a-f]{6})/i)[1];
+  const luminance = (hex) => {
+    const channels = hex.slice(1).match(/../g).map((part) => parseInt(part, 16) / 255);
+    const linear = channels.map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+    return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
+  };
+  assert.ok((1.05 / (luminance(textColor) + 0.05)) >= 4.5, 'Login text must remain readable when the company secondary color is pale');
+  assert.match(loginScope, /color-scheme:\s*light/);
+  const placeholder = loginCss.match(/\.login-secondary-form input::placeholder\s*\{([^}]+)\}/)[1];
+  const placeholderColor = placeholder.match(/color:\s*(#[0-9a-f]{6})/i)[1];
+  assert.ok((luminance('#fbfcfd') + 0.05) / (luminance(placeholderColor) + 0.05) >= 4.5);
+  assert.match(placeholder, /opacity:\s*1/);
   assert.match(loginCss, /\.customer-portal-link[\s\S]+min-height: 48px[\s\S]+background: #e5f3f0/);
   assert.match(loginCss, /\.customer-portal-link:hover,[\s\S]+border-color: var\(--primary\)/);
   assert.match(themeCss, /\.btn-secondary[\s\S]+background: #d8ece8[\s\S]+border-color: #84bbb2/);
