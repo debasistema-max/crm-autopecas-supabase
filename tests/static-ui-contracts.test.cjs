@@ -132,6 +132,15 @@ test('login keeps the access card visible in portrait, landscape and desktop lay
   assert.match(auth, /customerPortalLink\.hidden = target !== 'login'/);
 });
 
+test('customer access and shared portal buttons keep strong visual contrast', () => {
+  const loginCss = read('public/css/login.css');
+  const themeCss = read('public/css/theme.css');
+  assert.match(loginCss, /\.customer-portal-link[\s\S]+min-height: 48px[\s\S]+background: #e5f3f0/);
+  assert.match(loginCss, /\.customer-portal-link:hover,[\s\S]+border-color: var\(--primary\)/);
+  assert.match(themeCss, /\.btn-secondary[\s\S]+background: #d8ece8[\s\S]+border-color: #84bbb2/);
+  assert.match(themeCss, /\.btn-ghost[\s\S]+background: #fff[\s\S]+border-color: var\(--line-strong\)/);
+});
+
 test('company identity uses an admin-only image upload instead of an editable logo URL', () => {
   const settings = read('public/js/company_settings.js');
   const migration = read('supabase/migrations/099_company_logo_storage.sql');
@@ -148,6 +157,12 @@ test('company identity uses an admin-only image upload instead of an editable lo
   assert.match(migration, /for delete[\s\S]+to authenticated[\s\S]+public\.is_admin\(\)/);
   assert.equal((migration.match(/name like 'identity\/%'/g) || []).length, 2);
   assert.doesNotMatch(migration, /service_role|grant\s+all/i);
+});
+
+test('company identity falls back to the approved IPS and Yokomitsu logo', () => {
+  const settings = read('public/js/company_settings.js');
+  assert.match(settings, /logo_url: 'assets\/logo-ips-yokomitsu\.png'/);
+  assert.ok(fs.existsSync(path.join(publicRoot, 'assets/logo-ips-yokomitsu.png')));
 });
 
 test('CRM login provides secure email password recovery with a mobile-friendly policy', () => {
