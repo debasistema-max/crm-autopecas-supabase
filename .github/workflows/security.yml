@@ -53,6 +53,7 @@ jobs:
       - run: npm run check
       - run: npm run test:python
       - run: npm run test:static
+      - run: npm run test:session
       - name: Reject committed private secrets
         shell: bash
         run: |
