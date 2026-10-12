@@ -59,8 +59,12 @@ Deno.serve(async (request) => {
     });
     if (rateError) return reply(request, 503, { error: 'Login temporariamente indisponivel.' });
     if (permitted !== true) return reply(request, 429, { error: 'Muitas tentativas. Aguarde alguns minutos.' });
-    const { data: email, error: lookupError } = await admin.rpc('resolve_login_email', { login_text: login });
-    if (lookupError) return reply(request, 503, { error: 'Login temporariamente indisponivel.' });
+    let email: string | null = login.includes('@') ? login.toLowerCase() : null;
+    if (!email) {
+      const { data: resolvedEmail, error: lookupError } = await admin.rpc('resolve_login_email', { login_text: login });
+      if (lookupError) return reply(request, 503, { error: 'Login temporariamente indisponivel.' });
+      email = resolvedEmail;
+    }
     // Unknown identifiers still pass through Auth with an unusable identity.
     const effectiveEmail = email || `${crypto.randomUUID()}@invalid.example`;
     const { data, error } = await auth.auth.signInWithPassword({ email: effectiveEmail, password });

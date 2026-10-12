@@ -22,12 +22,13 @@ foundation SQL 100 compiled and its homologacao regression passed with `ROLLBACK
 for takeover, replay, release, RLS, API, scheduler and grants. The parent also
 reported a successful 303 MB production `pg_dump` at 09:32 on 2026-10-12. Confirm
 the backup's exact location, timezone, checksum and restore verification before
-mutation; neither report establishes production activation of migration 102.
-The parent subsequently reported foundation 100 already applied in homologacao;
-it is immutable. Review through homologacao tests remains staged with
-`app_session_policy.enforced=false`, not activated. The old local, unapplied
-activation file was moved to 102; new forward migration 101 contains the cutover
-guards. These reports are not independent remote verification by this session.
+mutation; neither report establishes production activation of migration 103.
+The parent subsequently reported 100/101 already applied in homologacao; preserve
+both immutable. Review through homologacao tests remains staged with
+`app_session_policy.enforced=false`, not activated. Following seed/claim race
+review, new forward migration 102 adds the monotonic claim guard and the local,
+unapplied activation file moved to 103. These reports are not independent remote
+verification by this session.
 
 ## Pages gate
 
@@ -68,9 +69,9 @@ npm test
 node tests/single-session-frontend.test.cjs
 ```
 
-The current `package.json` does not include the single-session tests in `npm test`.
-Run them separately locally; the Pages regression job includes an explicit step
-without changing parent-owned package scripts.
+The parent has now included `test:session` in canonical `npm test`; the homolog
+mirror package includes it too. The Pages regression job also explicitly covers
+the session suite. Running it separately remains useful for focused validation.
 
 ## Protect main and executor main
 
@@ -137,11 +138,11 @@ without changing parent-owned package scripts.
 ## Recover baseline without reset
 
 Local files include `001_schema.sql` and `001_part1.sql` through `001_part3.sql`;
-the sequence checker expects 001-099 and allows historical 001 parts. Older docs
+the sequence checker now expects 001-103 and allows historical 001 parts. Older docs
 describe missing baseline 001-042. Neither filenames nor historical notes prove
-that local and remote histories agree. The checker's current 099 bound does not
-validate presence/continuity of the new 100-102 rollout migrations; require their
-explicit review and SQL regression evidence even when `npm run check` passes.
+that local and remote histories agree. The checker validates filename continuity,
+not SQL behavior or remote application status. Require explicit review and SQL
+regression evidence for 100-103 even when `npm run check` passes.
 
 1. After verified backup, compare the exact approved Git revision, trusted
    historical exports/backups, read-only remote schema/ACL exports, and remote
@@ -168,7 +169,7 @@ explicit review and SQL regression evidence even when `npm run check` passes.
    public `consulta-cnpj` / `cadastro-cliente` as items to verify, not remotely
    observed facts. Record previous artifacts/configuration for rollback.
 3. Only after backup and tests, stage the reviewed backend foundation 100 and
-   cutover guards 101 as described below, then deploy `crm-login`, session-aware
+   cutover guards 101/102 as described below, then deploy `crm-login`, session-aware
    B2B functions and only public functions confirmed outdated. Do not redeploy every function or
    change `excel-sync`. Verify existing secrets, allowed origins, JWT/auth
    requirements, and public endpoint configuration explicitly; never globally
@@ -184,7 +185,7 @@ explicit review and SQL regression evidence even when `npm run check` passes.
    grant to bypass failures. Public pre-login RPC exceptions require explicit
    review and scoped grants; CRM/B2B internal functions must deny anonymous use.
 6. Publish compatible frontend only after backend smoke tests and the gated Pages
-   regression pass, then activate 102 only after the validation below. Promote
+   regression pass, then activate 103 only after the validation below. Promote
    that exact homologacao-approved revision to production with the same staged
    order, a fresh verified backup and explicit approval. Record commit, project,
    function versions, test evidence, approver and timestamps without secrets.
@@ -212,35 +213,47 @@ explicit review and SQL regression evidence even when `npm run check` passes.
    advisory lock as claim, retaining the matching-session condition and denying
    anonymous release. Test concurrent claim/release and replay so an older logout
    cannot clear the winning session. Migration 101 does not enable enforcement;
-   verify `enforced=false` throughout this staged review.
-3. Deploy and validate `crm-login` after foundation 100 and guards 101, before
-   activation 102.
+   verify `enforced=false` throughout this staged review. The parent reports 101
+   already applied in homologacao; preserve it unchanged and do not replay it.
+3. Review and test `102_monotonic_app_session_claim.sql` before authorized
+   application. It preserves per-user advisory serialization and makes the claim
+   conflict upsert atomic: update only for the same active session ID or a strictly
+   newer Auth creation timestamp. It checks the affected row count and raises
+   `PT401` / `SESSAO_SUBSTITUIDA` if the write loses. Test concurrent activation
+   seeding, claim/replay and release to verify the newer watermark cannot be
+   overwritten by an older claimant. Migration 102 does not activate enforcement;
+   keep this review staged with `enforced=false`.
+4. Deploy and validate `crm-login` after foundation 100 and guards 101/102, before
+   activation 103.
    CRM username/password login now resolves identity server-side using
    `service_role`, rather than exposing the anonymous username-to-email resolver.
+   Inputs containing `@` are lowercased and passed directly to Supabase Auth for
+   email-login parity; only usernames use server-side identity resolution. Verify
+   both paths with active, inactive and invalid disposable accounts.
    The endpoint uses salted hashed-IP rate limiting (currently 30 attempts per
    900 seconds), generic credential errors, and no credential/token logging.
    Validate trusted proxy IP handling and effective rate limits in homologacao.
    This is intentionally a pre-login endpoint: verify its specific gateway
    configuration allows requests without a user JWT while retaining credential
    validation, allowed origins and rate limiting. Do not relax other endpoints.
-4. Deploy compatible session-aware `b2b-admin` / `b2b-change-password`, then the
+5. Deploy compatible session-aware `b2b-admin` / `b2b-change-password`, then the
    CRM/B2B frontend and session guard through the Pages gate. Verify usernames,
    email login, password recovery, explicit session claims, restore without
    reclaim, replacement handling and scoped local logout with disposable accounts.
    Confirm every active deployment/mirror is compatible before cutting access to
-   the old resolver. Do not combine staged 100/101 and activation 102 in an
+   the old resolver. Do not combine staged 100-102 and activation 103 in an
    unattended migration push.
-5. Only after these stages and explicit authorization, apply
-   `102_activate_single_session.sql`. It seeds latest eligible existing Auth
+6. Only after these stages and explicit authorization, apply
+   `103_activate_single_session.sql`. It seeds latest eligible existing Auth
    sessions where no application session row exists and advances an existing row
    only when the incoming Auth `created_at` is strictly higher than its recorded
    `auth_created_at`. Equal/older timestamps cannot lower or overwrite the
    watermark, including released-session state. Test this cutover upsert before
-   activation. Migration 102 sets `enforced=true` and
+   activation. Migration 103 sets `enforced=true` and
    revokes EXECUTE on `public.resolve_login_email(text)` from `PUBLIC`, `anon`, and
    `authenticated`, retaining `service_role` for `crm-login`. The frontend must
    no longer call `resolveLoginEmail` / the anonymous resolver directly.
-6. Verify the policy flag and signature-specific grants read-only, then test two
+7. Verify the policy flag and signature-specific grants read-only, then test two
    independent clients for CRM and B2B. Check older sessions cannot reclaim access
    or mutate data, the current session works, and logout/password-change flows
    remain correct. Record live RLS/RPC/Edge Function evidence separately from
@@ -253,8 +266,8 @@ Stop on failed tests, unexplained history drift, backup gaps, missing admin
 recovery, authorization bypass, or unverified deployment target. Disable the
 existing executor if an authorized integration rollback is needed. Restore known
 function/frontend artifacts without reverting unrelated changes, but never restore
-a frontend that depends on resolver grants revoked by 102. The reviewed emergency
-pause is `supabase/rollback/102_single_session_pause.sql`, applied only with explicit
+a frontend that depends on resolver grants revoked by 103. The reviewed emergency
+pause is `supabase/rollback/103_single_session_pause.sql`, applied only with explicit
 authorization: it sets `enforced=false` and reloads PostgREST configuration without
 deleting session/audit state or undoing secure username login, restricted resolver
 grants, or corrected RLS. It pauses the single-session restriction, not all backend
