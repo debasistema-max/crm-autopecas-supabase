@@ -192,7 +192,7 @@ test('CRM login provides secure email password recovery with a mobile-friendly p
   assert.match(auth, /password\.length < 8/);
   assert.match(auth, /\!\/\[A-Za-z\]\//);
   assert.match(auth, /\!\/\[0-9\]\//);
-  assert.match(auth, /supabaseClient\.auth\.signOut\(\)/);
+  assert.match(auth, /supabaseClient\.auth\.signOut\(\{ scope: 'local' \}\)/);
 });
 
 test('Data Center is wired without frontend secrets and keeps manual imports', () => {
