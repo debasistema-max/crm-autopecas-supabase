@@ -96,6 +96,24 @@ class OneDrivePersonalSyncTest(unittest.TestCase):
         upload.assert_not_called()
         request.assert_not_called()
 
+    def test_master_inside_backup_folder_does_not_create_nested_folder(self):
+        with patch.object(MODULE, "locate_sync_folder", return_value={"id": "backups"}), \
+                patch.object(MODULE, "ensure_backup_folder") as ensure, \
+                patch.object(MODULE, "graph_collection", return_value=[]), \
+                patch.object(MODULE, "upload_backup", return_value={
+                    "id": "version", "name": "master__20260925140853Z__sha256-" + "c" * 64 + ".xlsx",
+                    "size": 10, "lastModifiedDateTime": "2026-09-25T14:09:00Z", "file": {},
+                }):
+            with patch.object(Path, "read_bytes", return_value=b"PK\x03\x04"), \
+                    patch.object(Path, "stat") as stat:
+                stat.return_value.st_size = 10
+                result = MODULE.create_version_backup(
+                    "token", "IPS CRM Excel Sync/Backups CRM", "master.xlsx", Path("master.xlsx"),
+                    "2026-09-25T14:08:53+00:00", "c" * 64,
+                )
+        ensure.assert_not_called()
+        self.assertTrue(result["created"])
+
     def test_graph_timestamp_overrides_download_mtime(self):
         with patch.dict(os.environ, {
             "MS_GRAPH_CLIENT_ID": "client", "MS_GRAPH_REFRESH_TOKEN": "refresh",

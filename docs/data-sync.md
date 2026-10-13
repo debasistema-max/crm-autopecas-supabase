@@ -171,11 +171,12 @@ pessoais, habilitar o fluxo delegado e consentir somente os escopos
 arquivos da conta autenticada; por isso, use uma conta Microsoft exclusiva para
 a integração, sem documentos particulares.
 
-Crie `OneDrive/IPS CRM Excel Sync` e copie a planilha mestre para essa pasta. O
-executor acessa diretamente apenas o caminho configurado, exige o nome exato da
-planilha e grava versões somente em `Backups CRM` dentro dessa pasta. Ele não
-lista a raiz da conta. Não gere link público e não coloque a planilha no
-repositório.
+Crie `OneDrive/IPS CRM Excel Sync` e mantenha a planilha mestre no caminho
+exato configurado. O executor exige o nome exato da planilha. Se o caminho já
+terminar em `Backups CRM`, as versões ficam ao lado da planilha; caso contrário,
+ficam em `Backups CRM` dentro da pasta configurada. Isso evita criar uma pasta
+`Backups CRM/Backups CRM`. O executor não lista a raiz da conta. Não coloque a
+planilha no repositório.
 
 Configure no GitHub, em Actions variables:
 

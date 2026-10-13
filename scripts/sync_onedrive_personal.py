@@ -241,7 +241,13 @@ def upload_backup(token: str, folder_id: str, filename: str, source: Path) -> di
 def create_version_backup(token: str, folder_path: str, workbook_name: str,
                           source: Path, source_updated_at: str, file_hash: str) -> dict[str, Any]:
     sync_folder = locate_sync_folder(token, folder_path)
-    backup_folder = ensure_backup_folder(token, str(sync_folder["id"]))
+    # The master workbook may itself live in the dedicated backup folder. In
+    # that case, keep versioned backups beside it instead of creating an
+    # accidental ``Backups CRM/Backups CRM`` nesting.
+    if normalize_folder_path(folder_path).split("/")[-1] == BACKUP_FOLDER_NAME:
+        backup_folder = sync_folder
+    else:
+        backup_folder = ensure_backup_folder(token, str(sync_folder["id"]))
     backup_id = urllib.parse.quote(str(backup_folder.get("id") or ""), safe="")
     if not backup_id:
         raise SyncError("PASTA_BACKUP_SEM_ID")
