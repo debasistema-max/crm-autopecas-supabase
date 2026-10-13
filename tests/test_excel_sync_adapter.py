@@ -1,5 +1,6 @@
 import importlib.util
 import unittest
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -50,6 +51,20 @@ class ExcelSyncAdapterTest(unittest.TestCase):
     def test_excel_fraction_preserves_rates_above_one_hundred_percent(self):
         self.assertEqual(MODULE.workbook_fraction_rate(1.5608946), 1.5608946)
         self.assertAlmostEqual(MODULE.workbook_fraction_rate("156.08946%"), 1.5608946)
+
+    def test_vehicle_year_text_rejects_excel_date_conversion(self):
+        self.assertEqual(MODULE.year_text("03/12"), "03/12")
+        self.assertEqual(MODULE.year_text("''12/15"), "12/15")
+        self.assertEqual(MODULE.year_text("10/..."), "10/...")
+        self.assertEqual(MODULE.year_text(datetime(2026, 12, 3), "d-mmm"), "03/12")
+        self.assertEqual(MODULE.year_text(datetime(2017, 10, 1), "mmm-yy"), "10/17")
+        self.assertEqual(MODULE.year_text(2020), "2020")
+        self.assertIsNone(MODULE.year_text(""))
+
+    def test_empty_vehicle_year_does_not_replace_existing_value(self):
+        fields = {"year": "03/12"}
+        MODULE.put(fields, "year", MODULE.year_text(""))
+        self.assertEqual(fields["year"], "03/12")
 
     def test_fiscal_bases_include_ncm_and_group_rules(self):
         workbook = Workbook()

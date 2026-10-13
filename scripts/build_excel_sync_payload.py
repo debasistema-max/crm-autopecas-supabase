@@ -14,7 +14,7 @@ import json
 import math
 import re
 import unicodedata
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any
@@ -118,6 +118,31 @@ def text(value: Any) -> str | None:
     return result or None
 
 
+def year_text(value: Any, number_format: str | None = None) -> str | None:
+    """Keep vehicle-year labels as text, including ranges Excel parsed as dates."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (datetime, date)):
+        normalized_format = re.sub(r"[^a-z]", "", str(number_format or "").lower())
+        has_day = "d" in normalized_format
+        has_year = "y" in normalized_format
+        if has_day and not has_year:
+            return f"{value.day:02d}/{value.month:02d}"
+        if has_year and not has_day:
+            return f"{value.month:02d}/{value.year % 100:02d}"
+        return (
+            f"{value.month:02d}/{value.year % 100:02d}"
+            if value.day == 1
+            else f"{value.day:02d}/{value.month:02d}"
+        )
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float) and math.isfinite(value) and value.is_integer():
+        return str(int(value))
+    result = str(value).strip().lstrip("'").strip()
+    return result or None
+
+
 def digits(value: Any) -> str | None:
     result = re.sub(r"\D", "", str(value or ""))
     return result or None
@@ -155,7 +180,8 @@ def product_record(store: dict[str, dict[str, Any]], code: str) -> dict[str, Any
 def read_products(workbook, products: dict[str, dict[str, Any]]):
     ws = workbook["MATRIZ"]
     _, mapping = find_header(ws, {"codigo ips", "descricao", "preco s imp"})
-    for values in ws.iter_rows(min_row=3, values_only=True):
+    for cells in ws.iter_rows(min_row=3, values_only=False):
+        values = tuple(cell.value for cell in cells)
         row = row_dict(values, mapping)
         code = product_code(row.get("codigo ips"))
         if not code:
@@ -164,12 +190,17 @@ def read_products(workbook, products: dict[str, dict[str, Any]]):
         put(fields, "description", text(row.get("descricao")))
         put(fields, "brand", text(row.get("marca")))
         put(fields, "application", text(row.get("aplicacao")))
-        put(fields, "year", text(row.get("ano")))
+        year_cell = cells[mapping["ano"]] if "ano" in mapping and mapping["ano"] < len(cells) else None
+        put(fields, "year", year_text(
+            row.get("ano"),
+            year_cell.number_format if year_cell is not None else None,
+        ))
         put(fields, "ipi_rate", rate(row.get("ipi")))
 
     ws = workbook["Cadastro Item SAP"]
     _, mapping = find_header(ws, {"n do item", "descricao do item", "codigo ncm"})
-    for values in ws.iter_rows(min_row=2, values_only=True):
+    for cells in ws.iter_rows(min_row=2, values_only=False):
+        values = tuple(cell.value for cell in cells)
         row = row_dict(values, mapping)
         code = product_code(row.get("n do item"))
         if not code:
@@ -180,7 +211,11 @@ def read_products(workbook, products: dict[str, dict[str, Any]]):
         if not fields.get("brand"):
             put(fields, "brand", text(row.get("marca")))
         put(fields, "model", text(row.get("modelo")))
-        put(fields, "year", fields.get("year") or text(row.get("ano")))
+        year_cell = cells[mapping["ano"]] if "ano" in mapping and mapping["ano"] < len(cells) else None
+        put(fields, "year", fields.get("year") or year_text(
+            row.get("ano"),
+            year_cell.number_format if year_cell is not None else None,
+        ))
         put(fields, "ncm", text(row.get("codigo ncm")))
         cest = row.get("codigo cest")
         put(fields, "cest", text(cest))
