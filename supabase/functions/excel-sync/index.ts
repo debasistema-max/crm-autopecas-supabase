@@ -33,6 +33,122 @@ async function rpc(client: SupabaseClient, name: string, args: Record<string, un
   return data;
 }
 
+function jsonScalar(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  throw new Error('AUDITORIA_ANO_INVALIDA');
+}
+
+async function sha256Hex(value: string) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function createYearRollbackBatch(client: SupabaseClient, targetBatchId: string) {
+  const { data: targetBatch, error: batchError } = await client
+    .from('products_import_batches')
+    .select('id,state,status,contract_version,integration_source')
+    .eq('id', targetBatchId)
+    .single();
+  if (batchError || !targetBatch) throw new Error('LOTE_ORIGINAL_NAO_ENCONTRADO');
+  if (targetBatch.contract_version !== 3 || targetBatch.state !== 'COMMITTED' ||
+      targetBatch.integration_source !== 'EXCEL_API') {
+    throw new Error('LOTE_ORIGINAL_NAO_REVERTIVEL');
+  }
+
+  const auditRows: Array<Record<string, unknown>> = [];
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await client
+      .from('products_import_audit')
+      .select('codigo,old_value,new_value,created_at')
+      .eq('batch_id', targetBatchId)
+      .eq('entity_type', 'PRODUCT')
+      .eq('field_name', 'year')
+      .eq('status', 'applied')
+      .order('codigo', { ascending: true })
+      .range(offset, offset + 999);
+    if (error) throw new Error(`AUDITORIA_ANO_INDISPONIVEL:${error.message}`);
+    const page = data || [];
+    auditRows.push(...page);
+    if (page.length < 1000) break;
+  }
+  if (auditRows.length < 1) throw new Error('AUDITORIA_ANO_VAZIA');
+
+  const byCode = new Map<string, { oldValue: string | null; newValue: string | null }>();
+  for (const row of auditRows) {
+    const code = String(row.codigo || '').trim();
+    if (!code || byCode.has(code)) throw new Error('AUDITORIA_ANO_DUPLICADA');
+    byCode.set(code, { oldValue: jsonScalar(row.old_value), newValue: jsonScalar(row.new_value) });
+  }
+
+  const codes = Array.from(byCode.keys());
+  const currentByCode = new Map<string, string | null>();
+  for (let offset = 0; offset < codes.length; offset += 500) {
+    const { data, error } = await client.from('products').select('codigo,ano').in('codigo', codes.slice(offset, offset + 500));
+    if (error) throw new Error(`PRODUTOS_ANO_INDISPONIVEIS:${error.message}`);
+    for (const row of data || []) currentByCode.set(String(row.codigo), row.ano === null ? null : String(row.ano));
+  }
+
+  const eligible: Array<{ code: string; oldValue: string | null }> = [];
+  const conflicts: string[] = [];
+  for (const [code, values] of byCode) {
+    if (!currentByCode.has(code) || currentByCode.get(code) !== values.newValue) {
+      conflicts.push(code);
+    } else {
+      eligible.push({ code, oldValue: values.oldValue });
+    }
+  }
+  if (eligible.length < 1) throw new Error('REVERSAO_ANO_SEM_LINHAS_ELEGIVEIS');
+
+  const canonical = JSON.stringify({
+    operation: 'ROLLBACK_YEAR_V1',
+    target_batch_id: targetBatchId,
+    rows: eligible.map((row) => [row.code, row.oldValue]),
+  });
+  const rollbackHash = await sha256Hex(canonical);
+  const sourceUpdatedAt = new Date().toISOString();
+  const created = await rpc(client, 'create_data_sync_batch', {
+    payload: {
+      source: 'EXCEL_API',
+      source_name: 'ROLLBACK_EXCEL_YEAR',
+      source_version: rollbackHash,
+      source_updated_at: sourceUpdatedAt,
+      file_hash: rollbackHash,
+      original_filename: `rollback-year-${targetBatchId}.json`,
+      file_size: new TextEncoder().encode(canonical).length,
+    },
+  });
+  const rollbackBatchId = String(created.batch_id || '');
+  if (!rollbackBatchId) throw new Error('LOTE_REVERSAO_NAO_CRIADO');
+
+  if (!created.duplicate) {
+    for (let offset = 0; offset < eligible.length; offset += 500) {
+      const records = eligible.slice(offset, offset + 500).map((row, index) => ({
+        area: 'PRODUCT',
+        product_code: row.code,
+        fields: { year: row.oldValue },
+        field_mask: ['year'],
+        clear_fields: row.oldValue === null ? ['year'] : [],
+        row_number: offset + index + 1,
+        source_version: rollbackHash,
+        source_updated_at: sourceUpdatedAt,
+        raw: { rollback_of_batch_id: targetBatchId },
+      }));
+      await rpc(client, 'stage_data_sync_rows', { target_batch_id: rollbackBatchId, rows: records });
+    }
+  }
+
+  return {
+    batch_id: rollbackBatchId,
+    duplicate: Boolean(created.duplicate),
+    audited_rows: auditRows.length,
+    eligible_rows: eligible.length,
+    conflict_rows: conflicts.length,
+    conflict_codes: conflicts.slice(0, 50),
+  };
+}
+
 async function finalizeBatch(client: SupabaseClient, batchId: string) {
   const validated = await rpc(client, 'validate_data_sync_batch', { target_batch_id: batchId });
   if (validated.status === 'failed') {
@@ -147,6 +263,14 @@ Deno.serve(async (request) => {
         }));
       }
 
+      if (operation === 'rollback-years') {
+        const targetBatchId = String(requestBody.target_batch_id || '').trim();
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(targetBatchId)) {
+          return response(request,400, { error: 'LOTE_ORIGINAL_INVALIDO' });
+        }
+        return response(request,200, await createYearRollbackBatch(client, targetBatchId));
+      }
+
       batchId = String(requestBody.batch_id || '').trim();
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(batchId)) {
         return response(request,400, { error: 'LOTE_INVALIDO' });
@@ -203,7 +327,7 @@ Deno.serve(async (request) => {
     return response(request,202, await dispatchGithubSync());
   } catch (error) {
     const message = error instanceof Error ? error.message : 'FALHA_NAO_DETALHADA';
-    const resumableOperation = ['stage', 'prepare', 'status', 'validate', 'commit'].includes(operation);
+    const resumableOperation = ['stage', 'prepare', 'status', 'validate', 'commit', 'rollback-years'].includes(operation);
     if (batchId && !resumableOperation) {
       await rpc(client, 'mark_data_sync_failure', { target_batch_id: batchId, error_message: message }).catch(() => null);
     } else if (!batchId) {
