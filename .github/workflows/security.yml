@@ -50,6 +50,8 @@ jobs:
           cache: pip
           cache-dependency-path: scripts/requirements-data-sync.txt
       - run: pip install -r scripts/requirements-data-sync.txt
+      - name: Install locked Node dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm run check
       - run: npm run test:python
       - run: npm run test:static

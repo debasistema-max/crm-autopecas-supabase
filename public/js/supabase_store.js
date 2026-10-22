@@ -278,12 +278,14 @@ async function supabaseSearchProducts(params) {
       group: params.grupo || '',
       maker: params.montadora || '',
       brand: params.marca || '',
+      vehicle_type: params.tipoVeiculo || '',
       include_inactive: params.incluirInativos === true,
       only_available: params.disponiveis === true || params.disponibilidade === 'disponivel',
       with_oem: params.comOem === true,
       with_photo: params.comFoto === true,
       favorite_codes: favoriteCodes,
-      limit: Number(params.limite || 60)
+      limit: Number(params.limite || 60),
+      offset: Math.max(Number(params.offset || 0), 0)
     }
   });
   if (error) throw error;
@@ -2160,6 +2162,14 @@ async function supabaseGetDataSyncStatus(filters = {}) {
     || { source: null, last_batch: null, connected: false };
 }
 
+async function supabaseRequestInstalledCatalogSync() {
+  return supabaseDataSyncRpc('request_installed_catalog_sync', {});
+}
+
+async function supabaseListInstalledCatalogSync() {
+  return (await supabaseDataSyncRpc('list_installed_catalog_sync', {})) || { rows: [] };
+}
+
 async function supabaseListDataSyncBatches(filters = {}) {
   return (await supabaseDataSyncRpc('list_data_sync_batches', { filters })) || { rows: [], count: 0 };
 }
@@ -2263,6 +2273,15 @@ async function supabaseGetFiscalPending(filters = {}) {
   return data || { summary: {}, rows: [] };
 }
 
+async function supabaseListCommercialLines() {
+  const { data, error } = await supabaseClient.rpc('get_commercial_list_lines');
+  if (error) throw new Error('Nao foi possivel carregar as linhas comerciais. ' + (error.message || ''));
+  if (!data || !Array.isArray(data.linhas) || data.linhas.some((line) => typeof line !== 'string')) {
+    throw new Error('Resposta invalida das linhas comerciais.');
+  }
+  return data.linhas;
+}
+
 async function supabaseGenerateCommercialList(route, filters = {}) {
   const rows = [];
   const seen = new Set();
@@ -2277,6 +2296,9 @@ async function supabaseGenerateCommercialList(route, filters = {}) {
       if (String(error.message).includes('CATALOGO_ALTERADO_DURANTE_GERACAO')) {
         throw new Error('O catalogo mudou durante a geracao. Gere a lista novamente.');
       }
+      if (String(error.message).includes('EXCESSO_DE_LINHAS')) throw new Error('Selecione no maximo 100 linhas.');
+      if (String(error.message).includes('LINHAS_INVALIDAS')) throw new Error('Selecao de linhas invalida. Selecione novamente.');
+      if (String(error.message).includes('TIPO_VEICULO_INVALIDO')) throw new Error('Tipo de veiculo invalido. Selecione novamente.');
       throw error;
     }
     if (!data || !Array.isArray(data.rows)) throw new Error('Resposta invalida ao gerar lista comercial.');
@@ -2320,6 +2342,31 @@ async function supabaseSetProductActive(productCode, isActive, expectedActive) {
     throw new Error(messages[error.message] || error.message || 'Nao foi possivel alterar o item.');
   }
   if (!data || data.codigo !== productCode || data.ativo !== isActive) throw new Error('Resposta invalida ao salvar a situacao do item.');
+  setStaticCache('productFiltersV4', null);
+  return data;
+}
+
+async function supabaseDeactivateProducts(items) {
+  if (!Array.isArray(items) || !items.length || items.length > 200
+    || items.some((item) => !item || typeof item.codigo !== 'string' || !item.codigo.trim() || item.codigo !== item.codigo.trim()
+      || item.codigo.length > 80 || typeof item.expected_active !== 'boolean')
+    || new Set(items.map((item) => item.codigo)).size !== items.length) throw new Error('Seleção de itens inválida. Pesquise novamente.');
+  const { data, error } = await supabaseClient.rpc('deactivate_products', { items });
+  if (error) {
+    const messages = {
+      SOMENTE_ADMIN_ALTERA_ATIVIDADE_PRODUTO: 'Somente ADMIN pode inativar itens.',
+      PRODUTO_ALTERADO_POR_OUTRO_USUARIO: 'Um item foi alterado por outro usuário. Nenhum item foi inativado; pesquise novamente.',
+      PRODUTO_NAO_ENCONTRADO: 'Um item não está mais disponível. Nenhum item foi inativado; pesquise novamente.',
+      LOTE_ATIVIDADE_LIMITE: 'Selecione entre 1 e 200 itens.'
+    };
+    throw new Error(messages[error.message] || 'Não foi possível confirmar a inativação. Atualize a pesquisa.');
+  }
+  const expected = new Set(items.map((item) => item.codigo));
+  if (!data || data.count !== items.length || !Array.isArray(data.rows) || data.rows.length !== items.length
+    || !Number.isInteger(data.changed) || data.changed < 0 || data.changed > items.length
+    || data.rows.some((row) => !row || row.ativo !== false || !expected.delete(row.codigo)) || expected.size) {
+    throw new Error('Não foi possível confirmar o resultado. Atualize a pesquisa antes de tentar novamente.');
+  }
   setStaticCache('productFiltersV4', null);
   return data;
 }
