@@ -6,10 +6,11 @@ const vm = require('node:vm');
 const crypto = require('node:crypto');
 
 const repoRoot = path.resolve(__dirname, '..');
-const publicRoot = path.join(repoRoot, 'public');
+const publicRoot = fs.existsSync(path.join(repoRoot, 'public')) ? path.join(repoRoot, 'public') : repoRoot;
 const resolveFile = (file) => {
-  const publicFile = path.join(publicRoot, file);
-  return fs.existsSync(publicFile) ? publicFile : path.join(repoRoot, file);
+  const relativeFile = file.replace(/^public\//, '');
+  const publicFile = path.join(publicRoot, relativeFile);
+  return fs.existsSync(publicFile) ? publicFile : path.join(repoRoot, relativeFile);
 };
 const read = (file) => fs.readFileSync(resolveFile(file), 'utf8');
 
@@ -406,18 +407,78 @@ test('CRM product search uses the current unified branch catalog', () => {
   const store = read('js/supabase_store.js');
   const products = read('js/products.js');
   const migration = read('supabase/migrations/082_current_crm_product_search.sql');
+  const paginationMigration = read('supabase/migrations/110_paginate_crm_product_catalog.sql');
   const regression = read('supabase/tests/082_current_crm_product_search_regression.sql');
   assert.match(store, /rpc\('search_products_v2'/);
   assert.match(store, /favorite_codes: favoriteCodes/);
   assert.doesNotMatch(store.slice(store.indexOf('async function supabaseSearchProducts'), store.indexOf('async function enrichProductsWithBranchAvailability')), /return supabaseListProducts/);
-  assert.match(products, /limite: options\.listaGeral \? 200 : 120/);
+  assert.match(products, /PRODUCT_GENERAL_PAGE_SIZE = 200/);
+  assert.match(products, /PRODUCT_XLSX_BATCH_SIZE = 500/);
+  assert.match(products, /data-product-page="next"/);
+  assert.match(products, /runProductGeneralListPage/);
+  assert.match(products, /loadAllProductsForXlsx/);
+  assert.match(products, /offset = Math\.min\(offset \+ PRODUCT_XLSX_BATCH_SIZE, PRODUCT_XLSX_MAX_OFFSET\)/);
+  assert.match(products, /Baixar XLSX/);
+  assert.match(products, /buildProductXlsxRows/);
+  assert.match(products, /product\.grupo \|\| product\.material_group \|\| product\.fiscal_group/);
+  assert.match(products, /product\.vehicle_makers\.join\('\ \/ '\)/);
+  assert.match(products, /\[\$R\$-pt-BR\] #,##0\.00/);
+  assert.match(products, /lista-produtos-.+\.xlsx/);
+  assert.doesNotMatch(products.slice(products.indexOf('function buildProductXlsxRows'), products.indexOf('async function exportProductsXlsx')), /similares|product\.similar/);
+  assert.match(products, /XLSX gerado com \$\{exportRows\.length\}/);
+  assert.match(store, /offset: Math\.max\(Number\(params\.offset \|\| 0\), 0\)/);
   assert.match(products, /productSearchRequests\.get\(target\) !== requestId/);
   assert.match(migration, /product_branch_stock/);
   assert.match(migration, /product_branch_prices/);
   assert.match(migration, /product_catalog_metadata/);
   assert.match(migration, /not exists \(\s*select 1 from unnest\(v_tokens\)/);
   assert.match(migration, /sp_source_display_value/);
+  assert.match(paginationMigration, /pg_get_functiondef\('public\.search_products_v2\(jsonb\)'::regprocedure\)/);
+  assert.match(paginationMigration, /offset v_offset/);
+  assert.match(paginationMigration, /CONTRATO_BUSCA_110_PAGINACAO_DIVERGENTE/);
+  const productExportMigration = read('supabase/migrations/111_product_export_vehicle_makers.sql');
+  assert.match(productExportMigration, /product_vehicle_makers/);
+  assert.match(productExportMigration, /Veiculos \/ anos informados no catalogo/);
+  assert.match(productExportMigration, /current_catalog_details/);
   assert.match(regression, /caixa hilux/);
+});
+
+test('general product XLSX loads every result page before downloading', async () => {
+  const context = vm.createContext({ console });
+  vm.runInContext(read('js/products.js'), context);
+  const calls = [];
+  context.supabaseSearchProducts = async (params) => {
+    calls.push({ offset: params.offset, limit: params.limite });
+    const length = Math.max(Math.min(1230 - params.offset, params.limite), 0);
+    return Array.from({ length }, (_, index) => ({ codigo: String(params.offset + index + 1) }));
+  };
+  context.xlsxParams = { listaGeral: true, regiao: 'PR' };
+  context.xlsxProgress = [];
+  const rows = await vm.runInContext('loadAllProductsForXlsx(xlsxParams, (count) => xlsxProgress.push(count))', context);
+  assert.equal(rows.length, 1230);
+  assert.deepEqual(calls, [
+    { offset: 0, limit: 500 },
+    { offset: 500, limit: 500 },
+    { offset: 1000, limit: 500 }
+  ]);
+  assert.deepEqual(Array.from(context.xlsxProgress), [500, 1000, 1230]);
+});
+
+test('product XLSX rows use material group, vehicle makers and numeric currency without similars', () => {
+  const context = vm.createContext({
+    console,
+    formatVehicleTypes: (types) => ({ LEVE: 'Leve', UTILITARIO: 'Utilitario', PESADO: 'Pesado' })[types?.[0]] || 'Nao classificado'
+  });
+  vm.runInContext(read('js/products.js'), context);
+  context.xlsxProducts = [{
+    codigo: '00123', linha: 'DIRECAO', grupo: '', material_group: '34',
+    vehicle_types: ['LEVE'], vehicle_makers: ['FIAT', 'FORD'], oem: 'ABC', similar: 'REMOVER',
+    aplicacao: 'PALIO / FIESTA', estoque: '12', preco: '123.45'
+  }];
+  const rows = JSON.parse(JSON.stringify(vm.runInContext('buildProductXlsxRows(xlsxProducts)', context)));
+  assert.deepEqual(rows[0], ['Código', 'Linha', 'Grupo', 'Tipo de veículo', 'Montadora', 'OEM', 'Aplicações', 'Estoque', 'Preço']);
+  assert.deepEqual(rows[1], ['00123', 'DIRECAO', '34', 'Leve', 'FIAT / FORD', 'ABC', 'PALIO / FIESTA', '12', 123.45]);
+  assert.equal(rows.flat().includes('REMOVER'), false);
 });
 
 test('mobile CRM keeps document scrolling available on iOS', () => {
@@ -856,6 +917,50 @@ test('commercial lists load every page and preserve line filters', async () => {
   assert.equal(calls[1].payload.filters.offset, 2);
   assert.equal(calls[1].payload.filters.expected_revision, '1:2026-10-13');
   assert.equal(calls[0].payload.filters.limit, 200);
+});
+
+test('commercial list pages retain every selected line', async () => {
+  const { context, calls } = commercialListHarness([
+    { data: { count: 2, rows: [{ product_code: 'A' }], has_more: true, next_offset: 1 } },
+    { data: { count: 2, rows: [{ product_code: 'B' }], has_more: false, next_offset: 2 } }
+  ]);
+  await context.supabaseGenerateCommercialList('PR-PR', { lines: ['FAROL', 'RETROVISOR'] });
+  for (const call of calls) assert.deepEqual(Array.from(call.payload.filters.lines), ['FAROL', 'RETROVISOR']);
+});
+
+test('commercial line options have their own validated RPC, not the SAP product filters', async () => {
+  const { context, calls } = commercialListHarness([{ data: { linhas: ['FAROL', 'LANTERNA', 'RETROVISOR'] } }]);
+  assert.deepEqual(Array.from(await context.supabaseListCommercialLines()), ['FAROL', 'LANTERNA', 'RETROVISOR']);
+  assert.equal(calls[0].name, 'get_commercial_list_lines');
+  const invalid = commercialListHarness([{ data: { linhas: [123] } }]);
+  await assert.rejects(() => invalid.context.supabaseListCommercialLines(), /Resposta invalida/);
+});
+
+test('invalid commercial line selections get friendly messages', async () => {
+  for (const [message, expected] of [['EXCESSO_DE_LINHAS', /maximo 100/], ['LINHAS_INVALIDAS', /Selecao de linhas invalida/]]) {
+    const { context } = commercialListHarness([{ error: { message } }]);
+    await assert.rejects(() => context.supabaseGenerateCommercialList('PR-PR', { lines: [] }), expected);
+  }
+});
+
+test('vehicle segments are carried in product search and all commercial pages', async () => {
+  const { context, calls } = commercialListHarness([{ data: [] }]);
+  await context.supabaseSearchProducts({ tipoVeiculo: 'UTILITARIO' });
+  assert.equal(calls[0].payload.filters.vehicle_type, 'UTILITARIO');
+  const commercial = commercialListHarness([
+    { data: { count: 2, rows: [{ product_code: 'A' }], has_more: true, next_offset: 1 } },
+    { data: { count: 2, rows: [{ product_code: 'B' }], has_more: false, next_offset: 2 } }
+  ]);
+  await commercial.context.supabaseGenerateCommercialList('PR-PR', { vehicle_type: 'PESADO' });
+  for (const call of commercial.calls) assert.equal(call.payload.filters.vehicle_type, 'PESADO');
+});
+
+test('vehicle segment display supports mixed and unknown applications', () => {
+  const context = vm.createContext({});
+  vm.runInContext(read('js/utils/format.js'), context);
+  assert.equal(context.formatVehicleTypes(['LEVE','UTILITARIO']), 'Leve / Utilitario');
+  assert.equal(context.formatVehicleTypes(null), 'Nao classificado');
+  assert.equal(context.formatVehicleTypes(['INVALIDO']), 'Nao classificado');
 });
 
 test('commercial list generation rejects partial, duplicated, oversized and changing results', async () => {
