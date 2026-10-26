@@ -65,8 +65,48 @@ test('seller styling is isolated and commercial focus hides the seller navigatio
   assert.match(app, /id === 'sellerNav' && !isCurrentUserSeller\(\)/);
   assert.match(app, /isModuleBlockedForCurrentRole\(module\) \|\| !hasModuleAccess\(module, allowed\)/);
   const page = read('app.html');
-  assert.match(page, /css\/seller.css\?v=20261022-route-pricing-1/);
-  assert.match(page, /js\/products.js\?v=20261026-catalog-lines-1/);
+  assert.match(page, /css\/seller.css\?v=20261026-visible-filters-1/);
+  assert.match(page, /js\/products.js\?v=20261026-visible-filters-1/);
+});
+
+test('seller filter controls remain visible without a collapsible disclosure', () => {
+  const context = catalogHarness('VENDEDOR');
+  const createNode = (tag) => ({ tagName: tag, children: [], attributes: {},
+    classList: { add() {} },
+    setAttribute(key, value) { this.attributes[key] = value; },
+    append(...nodes) { this.children.push(...nodes); }
+  });
+  context.document.createElement = createNode;
+  const form = createNode('form');
+  const ids = ['productLineFilter', 'productVehicleTypeFilter', 'productOemFilter', 'productPhotoFilter', 'productFavoritesFilter'];
+  const labels = Object.fromEntries(ids.map(id => [id, createNode('label')]));
+  const region = { previousSibling: {}, options: [{}, {}] };
+  let history;
+  const container = {
+    querySelector(selector) {
+      if (selector === '#productSearchForm') return form;
+      if (selector === '.product-search-main') return { firstChild: {} };
+      if (selector === '#productRegion') return region;
+      if (selector === '.product-search-panel .section-heading') return { remove() {} };
+      if (selector === '.product-insights-grid') return { before(node) { history = node; } };
+      if (selector === '.product-layout') return { after() {} };
+      const label = labels[selector.slice(1)];
+      assert.ok(label, 'unexpected selector: ' + selector);
+      return { closest: () => label };
+    },
+    querySelectorAll() { return []; }
+  };
+  context.arrangeSellerCatalog(container);
+  const filters = form.children[0];
+  assert.equal(filters.tagName, 'section');
+  assert.equal(filters.attributes['aria-label'], 'Filtros do catalogo');
+  assert.equal(filters.children[0].tagName, 'h3');
+  assert.equal(filters.children[0].textContent, 'Filtros');
+  assert.deepEqual(filters.children[1].children, ids.map(id => labels[id]));
+  assert.equal(history.tagName, 'details', 'history disclosure remains unchanged');
+  const style = read('css/seller.css').match(/\.seller-filter-heading\s*\{([^}]+)\}/)[1];
+  assert.match(style, /color:\s*var\(--text-strong\)/);
+  assert.doesNotMatch(style, /primary|opacity/);
 });
 
 test('horizontal navigation respects report-only, create-only and additional module permissions', () => {
