@@ -1133,6 +1133,8 @@ function showDocumentEditForm(kind, row) {
       <div class="sap-footer-actions">
         <input id="${kind}EditId" type="hidden" value="${escapeHtml(row.id || '')}">
         <button class="btn btn-primary" id="${kind}EditSaveButton" type="button">Salvar itens</button>
+        <button class="btn btn-secondary" id="${kind}PdfButton" type="button" title="Imprimir ou salvar como PDF">PDF</button>
+        <button class="btn btn-secondary" id="${kind}XlsxButton" type="button" title="Baixar planilha do documento">XLSX</button>
         <button class="btn btn-secondary" id="${kind}EditConfirmButton" type="button">${kind === 'pedidos' ? 'Efetivar pedido' : 'Efetivar cotacao'}</button>
         <button class="btn btn-ghost" id="${kind}EditCancelDocumentButton" type="button">${kind === 'pedidos' ? 'Cancelar pedido' : 'Cancelar cotacao'}</button>
         <button class="btn btn-ghost" id="${kind}EditCloseButton" type="button">Fechar</button>
@@ -1154,6 +1156,8 @@ function showDocumentEditForm(kind, row) {
   });
   syncDocumentStatusActions(kind);
   document.getElementById(`${kind}EditSaveButton`).addEventListener('click', () => saveDocumentEdit(kind));
+  document.getElementById(`${kind}PdfButton`).addEventListener('click', () => exportSavedCommercialDocument(kind, row.id, 'pdf'));
+  document.getElementById(`${kind}XlsxButton`).addEventListener('click', () => exportSavedCommercialDocument(kind, row.id, 'xlsx'));
   document.getElementById(`${kind}EditConfirmButton`).addEventListener('click', () => updateDocumentStatus(kind, row.id, getDocumentConfirmedStatus(kind)));
   document.getElementById(`${kind}EditCancelDocumentButton`).addEventListener('click', () => updateDocumentStatus(kind, row.id, getDocumentCanceledStatus(kind)));
   document.getElementById(`${kind}EditCloseButton`).addEventListener('click', () => {
