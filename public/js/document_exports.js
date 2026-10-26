@@ -50,40 +50,82 @@ function commercialExportSheet(data) {
   return sheet;
 }
 
-function renderCommercialPrint(data) {
-  const text = value => escapeHtml(String(value ?? 'Nao informado'));
-  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
-    <title>${text(data.filename)}</title><style>
-    @page{size:A4 landscape;margin:12mm}body{font:12px Arial;color:#111;margin:20px}
-    h1{font-size:20px}dl{display:grid;grid-template-columns:160px 1fr;gap:5px}dt{font-weight:bold}dd{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
-    table{width:100%;border-collapse:collapse;font-size:10px}th,td{padding:7px 4px;border-bottom:1px solid #ccc;text-align:right;overflow-wrap:anywhere}
-    th:first-child,td:first-child,th:nth-child(2),td:nth-child(2){text-align:left}thead{display:table-header-group}tr{break-inside:avoid}
-    .total{text-align:right;font-size:16px;font-weight:bold}
-    </style></head><body><h1>${text(data.title)} - ${text(data.number)}</h1>
-    <dl>${data.details.slice(1).map(([label, value]) => `<dt>${text(label)}</dt><dd>${text(value)}</dd>`).join('')}</dl>
-    <table><thead><tr>${data.headers.map(h => `<th>${text(h)}</th>`).join('')}</tr></thead>
-    <tbody>${data.rows.map(row => `<tr>${row.map((value, col) => `<td>${text(value == null ? 'Nao informado' : col < 3 ? value : col === 4 ? value + '%' : money(value))}</td>`).join('')}</tr>`).join('')}</tbody></table>
-    <p class="total">Total do documento: ${text(data.total == null ? 'Nao informado' : money(data.total))}</p>
-    <p>Valores preservados do documento salvo. Campos sem composicao registrada: Nao informado. Documento comercial, sem valor fiscal.</p>
-    </body></html>`;
+let commercialPdfLibraryPromise;
+
+async function loadCommercialPdfLibrary() {
+  if (!commercialPdfLibraryPromise) {
+    // Load only when requested; XLSX, login and ordinary navigation pay no PDF download cost.
+    commercialPdfLibraryPromise = (async () => {
+      for (const source of ['js/vendor/jspdf.umd.min.js?v=4.2.1', 'js/vendor/jspdf.plugin.autotable.min.js?v=5.0.9']) {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = source;
+          script.onload = resolve;
+          script.onerror = () => { script.remove(); reject(new Error('Nao foi possivel carregar o gerador PDF. Tente novamente.')); };
+          document.head.appendChild(script);
+        });
+      }
+      if (!window.jspdf?.jsPDF?.API.autoTable) throw new Error('Gerador PDF indisponivel. Atualize a pagina.');
+      return window.jspdf.jsPDF;
+    })().catch(error => { commercialPdfLibraryPromise = null; throw error; });
+  }
+  return commercialPdfLibraryPromise;
+}
+
+function buildCommercialPdf(data, PdfConstructor) {
+  const pdf = new PdfConstructor({ orientation: 'landscape', unit: 'mm', format: 'a4', compress: true });
+  pdf.setProperties({ title: `${data.title} - ${data.number}`, subject: 'Documento comercial, sem valor fiscal' });
+  const width = pdf.internal.pageSize.getWidth();
+  const height = pdf.internal.pageSize.getHeight();
+  const margin = 12;
+  const text = value => String(value ?? 'Nao informado');
+  const title = `${data.title} - ${data.number}`;
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(17);
+  const heading = pdf.splitTextToSize(title, width - margin * 2);
+  pdf.text(heading, margin, 17);
+  pdf.autoTable({
+    startY: 20 + (heading.length - 1) * 7, margin: { left: margin, right: margin, top: 15, bottom: 15 },
+    theme: 'plain', body: data.details.slice(1).filter(([, value]) => value !== '').map(([label, value]) => [label, text(value)]),
+    styles: { font: 'helvetica', fontSize: 9, cellPadding: 1.2, overflow: 'linebreak', textColor: [25, 35, 40] },
+    columnStyles: { 0: { cellWidth: 38, fontStyle: 'bold' }, 1: { cellWidth: width - margin * 2 - 38 } }
+  });
+  pdf.autoTable({
+    startY: pdf.lastAutoTable.finalY + 6,
+    margin: { left: margin, right: margin, top: 18, bottom: 18 },
+    theme: 'striped', head: [data.headers.map((label, index) => index === 2 ? 'Qtde' : index === 4 ? 'Desc. %' : label)],
+    body: data.rows.map(row => row.map((value, col) => value == null ? '-' : col < 3 ? text(value) : col === 4 ? `${value}%` : money(value))),
+    foot: [[{ content: 'Total do documento', colSpan: 10, styles: { halign: 'right' } },
+      data.total == null ? '-' : money(data.total)]], showFoot: 'lastPage',
+    styles: { font: 'helvetica', fontSize: 8, cellPadding: 1.6, overflow: 'linebreak', halign: 'right', valign: 'middle' },
+    headStyles: { fillColor: [25, 72, 62], textColor: [255, 255, 255], fontStyle: 'bold' },
+    footStyles: { fillColor: [230, 239, 236], textColor: [20, 40, 30], fontStyle: 'bold' },
+    columnStyles: { 0: { cellWidth: 25, halign: 'left' }, 1: { cellWidth: 68, halign: 'left' },
+      2: { cellWidth: 13 }, 3: { cellWidth: 22 }, 4: { cellWidth: 15 }, 5: { cellWidth: 24 },
+      6: { cellWidth: 20 }, 7: { cellWidth: 20 }, 8: { cellWidth: 20 }, 9: { cellWidth: 22 }, 10: { cellWidth: 24 } },
+    rowPageBreak: 'avoid'
+  });
+  const pageCount = pdf.getNumberOfPages();
+  for (let page = 1; page <= pageCount; page++) {
+    pdf.setPage(page);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(7);
+    pdf.setTextColor(70);
+    pdf.text('Documento comercial, sem valor fiscal. Valores salvos; composicao nao registrada: -.', margin, height - 8);
+    pdf.text(`${page} / ${pageCount}`, width - margin, height - 8, { align: 'right' });
+  }
+  return pdf;
 }
 
 async function exportSavedCommercialDocument(kind, id, format) {
   const message = document.getElementById(`${kind}EditMessage`);
   const buttons = ['Pdf', 'Xlsx'].map(name => document.getElementById(`${kind}${name}Button`));
   if (buttons.some(button => button?.disabled)) return;
-  let printWindow;
   try {
     if (!['pedidos', 'cotacoes'].includes(kind) || !['pdf', 'xlsx'].includes(format)) throw new Error('Exportacao invalida.');
     if (window[`${kind}EditDirty`]) throw new Error('Salve as alteracoes dos itens antes de exportar.');
     if (document.getElementById(`${kind}EditSaveButton`)?.disabled || documentStatusRequests.has(kind)) {
       throw new Error('Aguarde a conclusao da operacao antes de exportar.');
-    }
-    if (format === 'pdf') {
-      printWindow = window.open('', '_blank');
-      if (!printWindow) throw new Error('Permita abrir janelas para salvar o PDF.');
-      printWindow.opener = null;
-      printWindow.document.body.textContent = 'Preparando documento...';
     }
     buttons.forEach(button => { if (button) button.disabled = true; });
     message.textContent = 'Preparando exportacao...';
@@ -101,17 +143,12 @@ async function exportSavedCommercialDocument(kind, id, format) {
       XLSX.writeFile(workbook, `${data.filename}.xlsx`, { compression: true });
       message.textContent = 'Planilha gerada.';
     } else {
-      if (printWindow.closed) throw new Error('A janela de impressao foi fechada. Tente novamente.');
-      printWindow.document.open();
-      printWindow.document.write(renderCommercialPrint(data));
-      printWindow.document.close();
-      printWindow.focus();
-      printWindow.print();
-      message.textContent = 'Selecione Salvar como PDF na janela de impressao.';
+      const PdfConstructor = await loadCommercialPdfLibrary();
+      await buildCommercialPdf(data, PdfConstructor).save(`${data.filename}.pdf`, { returnPromise: true });
+      message.textContent = 'PDF gerado.';
     }
     message.style.color = 'var(--success)';
   } catch (error) {
-    if (printWindow && !printWindow.closed) printWindow.close();
     message.style.color = 'var(--accent)';
     message.textContent = error.message || 'Nao foi possivel exportar o documento.';
   } finally {
