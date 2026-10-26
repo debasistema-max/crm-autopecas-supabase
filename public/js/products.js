@@ -135,17 +135,19 @@ async function renderProducts(container) {
 
 function arrangeSellerCatalog(container) {
   const form = container.querySelector('#productSearchForm');
-  const details = document.createElement('details');
-  details.className = 'seller-extra-filters';
-  const summary = document.createElement('summary');
-  summary.textContent = 'Mais filtros';
+  const filters = document.createElement('section');
+  filters.className = 'seller-extra-filters';
+  filters.setAttribute('aria-label', 'Filtros do catalogo');
+  const heading = document.createElement('h3');
+  heading.className = 'seller-filter-heading';
+  heading.textContent = 'Filtros';
   const fields = document.createElement('div');
   fields.className = 'seller-extra-filter-grid';
   ['productLineFilter', 'productVehicleTypeFilter', 'productOemFilter', 'productPhotoFilter', 'productFavoritesFilter'].forEach((id) => {
     fields.append(container.querySelector(`#${id}`).closest('label'));
   });
-  details.append(summary, fields);
-  form.append(details);
+  filters.append(heading, fields);
+  form.append(filters);
   form.classList.add('seller-catalog-search');
   container.querySelector('.product-search-main').firstChild.textContent = 'Buscar produto';
   const region = container.querySelector('#productRegion');

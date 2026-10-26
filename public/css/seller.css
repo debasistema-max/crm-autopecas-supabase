@@ -194,7 +194,13 @@ body.seller-portal-mode {
   padding-top: 8px;
 }
 
-.seller-portal-mode .seller-extra-filters summary,
+.seller-portal-mode .seller-filter-heading {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 14px;
+  font-weight: 700;
+}
+
 .seller-portal-mode .seller-catalog-history summary {
   width: fit-content;
   min-height: 44px;
