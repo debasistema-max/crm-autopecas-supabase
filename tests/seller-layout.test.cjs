@@ -65,7 +65,7 @@ test('seller styling is isolated and commercial focus hides the seller navigatio
   assert.match(app, /id === 'sellerNav' && !isCurrentUserSeller\(\)/);
   assert.match(app, /isModuleBlockedForCurrentRole\(module\) \|\| !hasModuleAccess\(module, allowed\)/);
   const page = read('app.html');
-  assert.match(page, /css\/seller.css\?v=20261026-visible-filters-1/);
+  assert.match(page, /css\/seller.css\?v=20261026-desktop-width-1/);
   assert.match(page, /js\/products.js\?v=20261026-visible-filters-1/);
 });
 
@@ -107,6 +107,23 @@ test('seller filter controls remain visible without a collapsible disclosure', (
   const style = read('css/seller.css').match(/\.seller-filter-heading\s*\{([^}]+)\}/)[1];
   assert.match(style, /color:\s*var\(--text-strong\)/);
   assert.doesNotMatch(style, /primary|opacity/);
+});
+
+test('seller desktop uses full width while compact layouts keep their breakpoints', () => {
+  const css = read('css/seller.css');
+  const content = css.match(/\.seller-portal-mode \.content\s*\{([^}]+)\}/)[1];
+  assert.match(content, /width:\s*100%/);
+  assert.match(content, /max-width:\s*none/);
+  assert.doesNotMatch(css, /1240px|1192px/);
+  const desktop = css.slice(css.indexOf('@media (min-width: 981px)'), css.indexOf('@media (max-width: 980px)'));
+  assert.match(desktop, /grid-template-columns:\s*112px minmax\(0, 1fr\) 220px/);
+  assert.match(desktop, /repeat\(3, minmax\(100px, auto\)\)/);
+  const tablet = css.slice(css.indexOf('@media (max-width: 980px)'), css.indexOf('@media (max-width: 600px)'));
+  assert.match(tablet, /repeat\(2, minmax\(0, 1fr\)\)/);
+  const mobile = css.slice(css.indexOf('@media (max-width: 600px)'), css.indexOf('@media (pointer: coarse)'));
+  assert.match(mobile, /seller-extra-filter-grid \{ grid-template-columns: minmax\(0, 1fr\)/);
+  assert.match(mobile, /seller-product-row \{ grid-template-columns: 64px minmax\(0, 1fr\)/);
+  assert.match(mobile, /min-height: 44px/);
 });
 
 test('horizontal navigation respects report-only, create-only and additional module permissions', () => {
