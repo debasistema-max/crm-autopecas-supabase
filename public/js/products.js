@@ -59,9 +59,6 @@ async function renderProducts(container) {
           <label>Linha
             <select id="productLineFilter"><option value="">Todas</option></select>
           </label>
-          <label>Montadora
-            <select id="productMakerFilter"><option value="">Todas</option></select>
-          </label>
           <label>Tipo de veiculo
             <select id="productVehicleTypeFilter"><option value="">Todos</option><option value="LEVE">Leve</option><option value="UTILITARIO">Utilitario</option><option value="PESADO">Pesado</option><option value="NAO_CLASSIFICADO">Nao classificado</option></select>
           </label>
@@ -144,7 +141,7 @@ function arrangeSellerCatalog(container) {
   summary.textContent = 'Mais filtros';
   const fields = document.createElement('div');
   fields.className = 'seller-extra-filter-grid';
-  ['productLineFilter', 'productMakerFilter', 'productVehicleTypeFilter', 'productOemFilter', 'productPhotoFilter', 'productFavoritesFilter'].forEach((id) => {
+  ['productLineFilter', 'productVehicleTypeFilter', 'productOemFilter', 'productPhotoFilter', 'productFavoritesFilter'].forEach((id) => {
     fields.append(container.querySelector(`#${id}`).closest('label'));
   });
   details.append(summary, fields);
@@ -187,7 +184,6 @@ function bindProductSearch() {
     'productRegion',
     'productDestination',
     'productLineFilter',
-    'productMakerFilter',
     'productAvailableFilter',
     'productOemFilter',
     'productPhotoFilter',
@@ -219,7 +215,6 @@ function getProductSearchParams(options = {}) {
     destinoUf: document.getElementById('productDestination').value,
     catalogPricing: true,
     linha: document.getElementById('productLineFilter').value,
-    vehicleMaker: document.getElementById('productMakerFilter').value,
     tipoVeiculo: document.getElementById('productVehicleTypeFilter').value,
     disponiveis: document.getElementById('productAvailableFilter').checked,
     comOem: document.getElementById('productOemFilter').checked,
@@ -242,7 +237,6 @@ function clearProductFilters() {
   if (inactive) inactive.checked = false;
   document.getElementById('productTerm').value = '';
   document.getElementById('productLineFilter').value = '';
-  document.getElementById('productMakerFilter').value = '';
   document.getElementById('productVehicleTypeFilter').value = '';
   document.getElementById('productAvailableFilter').checked = false;
   document.getElementById('productOemFilter').checked = false;
@@ -940,10 +934,6 @@ async function loadProductFilterOptions() {
   try {
     const filters = await supabaseListProductFilters();
     fillProductSelect(document.getElementById('productLineFilter'), filters.linhas, 'Todas');
-    fillProductSelect(document.getElementById('productMakerFilter'), filters.montadoras, 'Todas');
-    document.querySelectorAll('#productMakerFilter option').forEach((option) => {
-      if (option.value) option.textContent = vehicleMakerLabel(option.value);
-    });
   } catch (error) {
     message.style.color = 'var(--accent)';
     message.textContent = 'Nao foi possivel carregar filtros.';

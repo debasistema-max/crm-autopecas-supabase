@@ -13,6 +13,8 @@ function harness() {
 test('catalog removes the group control without removing product group data', () => {
   const source = read('js/products.js');
   assert.doesNotMatch(source, /productGroupFilter/);
+  assert.doesNotMatch(source, /productMakerFilter/);
+  assert.match(source, /productLineFilter/);
   assert.match(source, /detailItem\('Grupo', product\.grupo\)/);
 });
 test('maker labels distinguish unknown and universal without showing supplier codes', () => {
@@ -37,13 +39,13 @@ test('vehicle maker and legacy manufacturer filters use separate API fields', as
 test('options use versioned cache and never fall back to scanning SAP manufacturers', async () => {
   const c = harness();const writes = [];
   vm.runInContext(read('js/supabase_store.js'), c);
-  c.getStaticCache = (key) => { assert.equal(key, 'productFiltersV5');return null; };
+  c.getStaticCache = (key) => { assert.equal(key, 'productFiltersV6');return null; };
   c.setStaticCache = (key, value) => writes.push({ key, value });
   c.supabaseClient = { from: () => { throw new Error('must not scan products'); }, rpc: async (name) => {
-    assert.equal(name, 'get_catalog_filter_options');return { data: { grupos: [], linhas: [], marcas: [], montadoras: ['TOYOTA'] } };
+    assert.equal(name, 'get_catalog_filter_options');return { data: { grupos: [], linhas: ['FREIOS'], marcas: [], montadoras: ['TOYOTA'] } };
   } };
   assert.equal((await c.supabaseListProductFilters()).montadoras[0], 'TOYOTA');
-  assert.equal(writes[0].key, 'productFiltersV5');
+  assert.equal(writes[0].key, 'productFiltersV6');
   c.supabaseClient.rpc = async () => ({ data: { montadoras: [] } });
   await assert.rejects(() => c.supabaseListProductFilters(), /Filtros do catálogo/);
   assert.equal(writes.length, 1);
@@ -68,12 +70,40 @@ test('SQL applies vehicle filters before pagination and never rewrites SAP manuf
   assert.match(sql, /get_catalog_filter_options/);
   assert.doesNotMatch(sql, /update public\.products|set montadora|grant execute.*canonical_vehicle_maker/i);
 });
-test('changing maker preserves general-list pagination instead of truncating its export', () => {
+test('changing line preserves general-list pagination instead of truncating its export', () => {
   const c = harness();const events = new Map(), calls = [];
   c.document = { getElementById: (id) => ({ addEventListener: (name, callback) => events.set(id + ':' + name, callback) }) };
   vm.runInContext(read('js/products.js'), c);
   c.runProductSearch = (params) => calls.push(params);
   c.bindProductSearch();vm.runInContext('productState.generalList=true;', c);
-  events.get('productMakerFilter:change')();
+  events.get('productLineFilter:change')();
   assert.equal(calls[0].listaGeral, true);
+});
+
+test('empty cached lines are refreshed and empty server results are not cached', async () => {
+  const c = harness();let calls = 0;const writes = [];
+  vm.runInContext(read('js/supabase_store.js'), c);
+  c.getStaticCache = () => ({ linhas: [], grupos: [], marcas: [], montadoras: [] });
+  c.setStaticCache = (key, value) => writes.push({ key, value });
+  c.supabaseClient = { rpc: async () => ({ data: { linhas: calls++ ? ['FAROIS'] : [], grupos: [], marcas: [], montadoras: [] } }) };
+  assert.equal((await c.supabaseListProductFilters()).linhas.length, 0);
+  assert.equal(writes.length, 0);
+  assert.equal((await c.supabaseListProductFilters()).linhas[0], 'FAROIS');
+  assert.equal(writes.length, 1);
+});
+
+test('catalog loads lines without touching the removed maker control', async () => {
+  const c = harness();
+  const line = { innerHTML: '' }, message = { style: {}, textContent: '' };
+  c.document = { getElementById: id => {
+    if (id === 'productLineFilter') return line;
+    if (id === 'productMessage') return message;
+    throw new Error('Unexpected filter: ' + id);
+  } };
+  c.supabaseListProductFilters = async () => ({ linhas: ['FAROL', 'LANTERNA'] });
+  vm.runInContext(read('js/products.js'), c);
+  await c.loadProductFilterOptions();
+  assert.match(line.innerHTML, /FAROL/);
+  assert.match(line.innerHTML, /LANTERNA/);
+  assert.equal(message.textContent, '');
 });

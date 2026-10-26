@@ -993,7 +993,7 @@ test('product activity RPC carries optimistic state and invalidates static filte
   assert.equal(result.ativo, false);
   assert.equal(calls[0].name, 'set_product_active');
   assert.equal(calls[0].payload.expected_active, true);
-  assert.equal(cacheWrites[0].key, 'productFiltersV5');
+  assert.equal(cacheWrites[0].key, 'productFiltersV6');
   assert.equal(cacheWrites[0].value, null);
 });
 

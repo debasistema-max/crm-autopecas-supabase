@@ -405,14 +405,14 @@ function formatQuantity(value) {
 }
 
 async function supabaseListProductFilters() {
-  const cached = getStaticCache('productFiltersV5', 10 * 60 * 1000);
-  if (cached && cached.marcas && cached.montadoras) return cached;
+  const cached = getStaticCache('productFiltersV6', 10 * 60 * 1000);
+  if (cached && cached.marcas && cached.montadoras && Array.isArray(cached.linhas) && cached.linhas.length) return cached;
   const { data, error } = await supabaseClient.rpc('get_catalog_filter_options');
   if (error) throw error;
   const filters = data;
   if (!filters || ['grupos', 'linhas', 'marcas', 'montadoras'].some((key) => !Array.isArray(filters[key])
     || filters[key].some((value) => typeof value !== 'string'))) throw new Error('Filtros do catálogo indisponíveis. Atualize e tente novamente.');
-  setStaticCache('productFiltersV5', filters);
+  if (filters.linhas.length) setStaticCache('productFiltersV6', filters);
   return filters;
 }
 
@@ -2345,7 +2345,7 @@ async function supabaseSetProductActive(productCode, isActive, expectedActive) {
     throw new Error(messages[error.message] || error.message || 'Nao foi possivel alterar o item.');
   }
   if (!data || data.codigo !== productCode || data.ativo !== isActive) throw new Error('Resposta invalida ao salvar a situacao do item.');
-  setStaticCache('productFiltersV5', null);
+  setStaticCache('productFiltersV6', null);
   return data;
 }
 
@@ -2370,6 +2370,6 @@ async function supabaseDeactivateProducts(items) {
     || data.rows.some((row) => !row || row.ativo !== false || !expected.delete(row.codigo)) || expected.size) {
     throw new Error('Não foi possível confirmar o resultado. Atualize a pesquisa antes de tentar novamente.');
   }
-  setStaticCache('productFiltersV5', null);
+  setStaticCache('productFiltersV6', null);
   return data;
 }
