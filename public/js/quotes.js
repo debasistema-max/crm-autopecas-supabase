@@ -467,11 +467,10 @@ function renderQuoteCart() {
   const count = document.getElementById('quoteCount');
   const totals = document.getElementById('quoteTotals');
   count.textContent = quoteItems.length + (quoteItems.length === 1 ? ' item' : ' itens');
-  const total = quoteItems.reduce((sum, item) => sum + item.preco * item.quantidade * (1 - item.desconto_percentual / 100), 0);
   if (!quoteItems.length) {
     list.className = 'sap-items-wrap';
     list.innerHTML = '<p class="commercial-empty-items">Nenhum produto adicionado.</p>';
-    totals.innerHTML = renderCommercialTotal(0);
+    totals.innerHTML = renderDocumentTaxTotals([]);
     return;
   }
   list.className = 'sap-items-wrap';
@@ -494,13 +493,11 @@ function renderQuoteCart() {
       renderQuoteCart();
     });
   });
-  totals.innerHTML = renderCommercialTotal(total);
+  totals.innerHTML = renderDocumentTaxTotals(quoteItems);
 }
 
 function renderSapQuoteItemsTable(items) {
   const rows = items.length ? items.map((item, index) => {
-    const finalUnit = item.preco * (1 - item.desconto_percentual / 100);
-    const rowTotal = finalUnit * item.quantidade;
     return `
       <tr>
         <td class="commercial-item-product"><strong><span class="sap-code">${escapeHtml(item.codigo)}</span> · ${escapeHtml(item.descricao || '')}</strong>
@@ -508,24 +505,20 @@ function renderSapQuoteItemsTable(items) {
           <small>Estoque ${escapeHtml(item.commercial_availability || '—')} ${escapeHtml(item.commercial_available_qty || '')}</small>
           <details class="commercial-item-details">
             <summary>Preco e impostos</summary>
-            <small>Base ${money(item.preco_sem_imposto || 0)} · Tributos ${money(item.tributos || 0)}</small>
-            <small class="fiscal-breakdown">${escapeHtml(formatFiscalBreakdown(item.fiscal_details))}</small>
             <small class="fiscal-inline-status">${escapeHtml(formatFiscalStatus(item.fiscal_status))}</small>
             ${item.fiscal_warnings?.length ? `<small class="fiscal-warning">${escapeHtml(formatFiscalWarnings(item.fiscal_warnings))}</small>` : ''}
           </details></td>
         <td><input type="number" min="1" value="${escapeHtml(item.quantidade)}" data-quote-qty="${index}"></td>
-        <td>${money(item.preco)}</td>
-        <td><input type="number" min="0" step="0.01" value="${escapeHtml(item.desconto_percentual)}" data-quote-discount="${index}"></td>
-        <td>${money(rowTotal)}</td>
+        ${renderDocumentTaxCells(item, `<input type="number" min="0" max="100" step="0.01" value="${escapeHtml(item.desconto_percentual)}" data-quote-discount="${index}" aria-label="Desconto sobre preco base">`)}
         <td><button class="sap-remove-button" type="button" data-quote-remove="${index}" title="Remover" aria-label="Remover ${escapeHtml(item.codigo)}">×</button></td>
       </tr>
     `;
-  }).join('') : '<tr><td colspan="6" class="sap-empty-row">Nenhum produto adicionado ainda.</td></tr>';
+  }).join('') : '<tr><td colspan="10" class="sap-empty-row">Nenhum produto adicionado ainda.</td></tr>';
   return `
-    <table class="sap-items-table">
+    <table class="sap-items-table commercial-tax-table">
       <thead>
         <tr>
-          <th>Produto</th><th>Qtde</th><th>Preco</th><th>Desc. %</th><th>Total</th><th></th>
+          <th>Produto</th><th>Qtde</th><th>Base unit.</th><th>Desc. %</th><th>Base c/ desc.</th><th>ST unit.</th><th>IPI unit.</th><th>Final unit.</th><th>Total</th><th></th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -1048,6 +1041,7 @@ function showDocumentEditForm(kind, row) {
   const companySettings = cachedCompanySettings || DEFAULT_COMPANY_SETTINGS;
   const branchLabel = formatCompanyBranchLabel(companySettings);
   window[`${kind}EditingItems`] = normalizeDocumentItems(row[itemsKey] || []);
+  window[`${kind}EditingHeader`] = { regiao: row.regiao, billing_uf: row.billing_uf };
   window[`${kind}EditDirty`] = false;
   panel.dataset.documentStatus = row.status || '';
   panel.dataset.statusBusy = 'false';
@@ -1352,13 +1346,11 @@ function renderDocumentEditItems(kind) {
   if (count) count.textContent = items.length + (items.length === 1 ? ' item' : ' itens');
   if (!items.length) {
     target.innerHTML = renderDocumentSapItemsTable(kind, []);
-    if (totals) totals.innerHTML = renderSapTotals(0, 0, 0);
+    if (totals) totals.innerHTML = renderDocumentTaxTotals([]);
     return;
   }
-  const subtotal = items.reduce((sum, item) => sum + Number(item.preco || 0) * Number(item.quantidade || 0), 0);
-  const total = items.reduce((sum, item) => sum + Number(item.preco || 0) * Number(item.quantidade || 0) * (1 - Number(item.desconto_percentual || 0) / 100), 0);
   target.innerHTML = renderDocumentSapItemsTable(kind, items);
-  if (totals) totals.innerHTML = renderSapTotals(subtotal, subtotal - total, total);
+  if (totals) totals.innerHTML = renderDocumentTaxTotals(items);
   target.querySelectorAll('[data-document-edit-qty]').forEach((input) => {
     input.addEventListener('input', () => {
       const item = items[Number(input.dataset.documentEditQty)];
@@ -1370,6 +1362,7 @@ function renderDocumentEditItems(kind) {
       items[Number(input.dataset.documentEditQty)].quantidade = Math.max(1, Number(input.value || 1));
       window[`${kind}EditDirty`] = true;
       renderDocumentEditItems(kind);
+      ensureDocumentEditFiscalPrice(kind, items[Number(input.dataset.documentEditQty)]);
     });
   });
   target.querySelectorAll('[data-document-edit-discount]').forEach((input) => {
@@ -1383,6 +1376,7 @@ function renderDocumentEditItems(kind) {
       items[Number(input.dataset.documentEditDiscount)].desconto_percentual = Math.max(0, Number(input.value || 0));
       window[`${kind}EditDirty`] = true;
       renderDocumentEditItems(kind);
+      ensureDocumentEditFiscalPrice(kind, items[Number(input.dataset.documentEditDiscount)]);
     });
   });
   target.querySelectorAll('[data-document-edit-remove]').forEach((button) => {
@@ -1395,44 +1389,25 @@ function renderDocumentEditItems(kind) {
 }
 
 function renderDocumentSapItemsTable(kind, items) {
-  const totalQty = items.reduce((sum, item) => sum + Number(item.quantidade || 0), 0);
-  const subtotal = items.reduce((sum, item) => sum + Number(item.preco || 0) * Number(item.quantidade || 0), 0);
-  const total = items.reduce((sum, item) => sum + Number(item.preco || 0) * Number(item.quantidade || 0) * (1 - Number(item.desconto_percentual || 0) / 100), 0);
   const rows = items.length ? items.map((item, index) => {
-    const finalUnit = Number(item.preco || 0) * (1 - Number(item.desconto_percentual || 0) / 100);
-    const rowTotal = finalUnit * Number(item.quantidade || 0);
     return `
       <tr>
-        <td>${index + 1}</td>
-        <td class="sap-code">${escapeHtml(item.codigo || '')}</td>
-        <td>${escapeHtml(item.descricao || '')}</td>
-        <td>${escapeHtml(item.marca || '')}</td>
-        <td>${escapeHtml(item.aplicacao || '')}</td>
-        <td>UN</td>
+        <td class="commercial-item-product"><strong><span class="sap-code">${escapeHtml(item.codigo || '')}</span> · ${escapeHtml(item.descricao || '')}</strong>
+          <small>${escapeHtml([item.marca, item.aplicacao].filter(Boolean).join(' · '))}</small></td>
         <td><input type="number" min="1" value="${escapeHtml(item.quantidade)}" data-document-edit-qty="${index}"></td>
-        <td>${money(item.preco)}</td>
-        <td><input type="number" min="0" step="0.01" value="${escapeHtml(item.desconto_percentual)}" data-document-edit-discount="${index}"></td>
-        <td>${money(finalUnit)}</td>
-        <td>${money(rowTotal)}</td>
-        <td>${money(rowTotal)}</td>
+        ${renderDocumentTaxCells(item, `<input type="number" min="0" max="100" step="0.01" value="${escapeHtml(item.desconto_percentual)}" data-document-edit-discount="${index}" aria-label="Desconto sobre preco base">`)}
         <td><button class="sap-remove-button" type="button" data-document-edit-remove="${index}" title="Remover">-</button></td>
       </tr>
     `;
-  }).join('') : '<tr><td colspan="13" class="sap-empty-row">Nenhum item no documento.</td></tr>';
+  }).join('') : '<tr><td colspan="10" class="sap-empty-row">Nenhum item no documento.</td></tr>';
   return `
-    <table class="sap-items-table">
+    <table class="sap-items-table commercial-tax-table">
       <thead>
         <tr>
-          <th>#</th><th>Cod.</th><th>Descricao</th><th>Marca</th><th>Aplicacao</th><th>UM</th><th>Qtde</th>
-          <th>Pr.Unit.</th><th>% do desc.</th><th>Pr.Apos Desc.</th><th>Total Apos Desc.</th><th>Total c/ Imp.</th><th></th>
+          <th>Produto</th><th>Qtde</th><th>Base unit.</th><th>Desc. %</th><th>Base c/ desc.</th><th>ST unit.</th><th>IPI unit.</th><th>Final unit.</th><th>Total</th><th></th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
-      <tfoot>
-        <tr>
-          <td colspan="6">Totais:</td><td>${totalQty}</td><td></td><td></td><td></td><td>${money(total)}</td><td>${money(subtotal)}</td><td></td>
-        </tr>
-      </tfoot>
     </table>
   `;
 }
@@ -1445,7 +1420,7 @@ async function searchProductsForDocumentEdit(kind, regiao) {
   }, (product) => addProductToDocumentEdit(kind, product));
 }
 
-function addProductToDocumentEdit(kind, product) {
+async function addProductToDocumentEdit(kind, product) {
   const items = window[`${kind}EditingItems`] || [];
   const existing = items.find((item) => item.codigo === product.codigo);
   if (existing) {
@@ -1458,7 +1433,8 @@ function addProductToDocumentEdit(kind, product) {
       aplicacao: product.aplicacao,
       preco: Number(product.preco || 0),
       quantidade: 1,
-      desconto_percentual: 0
+      desconto_percentual: 0,
+      fiscal_status: 'CALCULANDO'
     });
   }
   window[`${kind}EditingItems`] = items;
@@ -1468,6 +1444,29 @@ function addProductToDocumentEdit(kind, product) {
   if (namePreview) namePreview.value = product.descricao || '';
   if (groupPreview) groupPreview.value = product.grupo || product.linha || product.categoria || '';
   renderDocumentEditItems(kind);
+  if (!existing) {
+    await ensureDocumentEditFiscalPrice(kind, items[items.length - 1]);
+  }
+}
+
+async function ensureDocumentEditFiscalPrice(kind, item) {
+  if (!item || item.priceLoading || calculateDocumentItemAmounts(item).available) return;
+  const items = window[`${kind}EditingItems`];
+  const header = window[`${kind}EditingHeader`] || {};
+  item.priceLoading = true;
+  item.fiscal_status = 'CALCULANDO';
+  try {
+    const result = await supabaseGetProductCommercialPrice(item.codigo, header.regiao, header.billing_uf || header.regiao, 'REVENDA');
+    item.fiscal_details = result;
+    item.fiscal_status = result.status;
+    item.preco = Number(result.final_price || 0);
+  } catch (error) {
+    item.fiscal_status = 'FALHA_CALCULO';
+    item.preco = 0;
+  } finally {
+    item.priceLoading = false;
+    if (window[`${kind}EditingItems`] === items) renderDocumentEditItems(kind);
+  }
 }
 
 async function saveDocumentEdit(kind) {
