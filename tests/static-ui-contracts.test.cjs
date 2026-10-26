@@ -552,10 +552,11 @@ test('quotation and order creation keep only the essential commercial workflow v
     assert.doesNotMatch(createView, /class="sap-titlebar"/);
     assert.doesNotMatch(createView, /Nenhum cliente selecionado/);
     assert.doesNotMatch(createView, /Impostos calculados automaticamente/);
-    assert.match(source, /<th>Produto<\/th><th>Qtde<\/th><th>Preco<\/th>/);
-    assert.match(source, /colspan="6" class="sap-empty-row"/);
+    assert.match(source, /<th>Produto<\/th><th>Qtde<\/th><th>Base unit\.<\/th>/);
+    assert.match(source, /<th>ST unit\.<\/th><th>IPI unit\.<\/th><th>Final unit\.<\/th>/);
+    assert.match(source, /colspan="10" class="sap-empty-row"/);
     assert.match(source, /class="commercial-item-details"/);
-    assert.match(source, /renderCommercialTotal/);
+    assert.match(source, /renderDocumentTaxTotals/);
     assert.match(source, /customer_type: 'REVENDA'/);
     assert.doesNotMatch(createView, /Status SAP<input/);
     assert.doesNotMatch(createView, /Autorizacao portal<input/);

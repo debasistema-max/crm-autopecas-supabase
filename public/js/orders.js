@@ -500,11 +500,10 @@ function renderCart() {
   const count = document.getElementById('cartCount');
   const totals = document.getElementById('cartTotals');
   count.textContent = orderItems.length + (orderItems.length === 1 ? ' item' : ' itens');
-  const total = orderItems.reduce((sum, item) => sum + item.preco * item.quantidade * (1 - item.desconto_percentual / 100), 0);
   if (!orderItems.length) {
     list.className = 'sap-items-wrap';
     list.innerHTML = '<p class="commercial-empty-items">Nenhum produto adicionado.</p>';
-    totals.innerHTML = renderCommercialTotal(0);
+    totals.innerHTML = renderDocumentTaxTotals([]);
     return;
   }
   list.className = 'sap-items-wrap';
@@ -527,13 +526,11 @@ function renderCart() {
       renderCart();
     });
   });
-  totals.innerHTML = renderCommercialTotal(total);
+  totals.innerHTML = renderDocumentTaxTotals(orderItems);
 }
 
 function renderSapOrderItemsTable(items) {
   const rows = items.length ? items.map((item, index) => {
-    const finalUnit = item.preco * (1 - item.desconto_percentual / 100);
-    const rowTotal = finalUnit * item.quantidade;
     const region = document.getElementById('orderRegion')?.value || 'PR';
     const branchInfo = formatBranchAvailability(item, region, item.quantidade);
     const transferNotice = canRenderTransferInformation() ? getBranchTransferNotice(item, region, item.quantidade) : null;
@@ -546,24 +543,20 @@ function renderSapOrderItemsTable(items) {
           <details class="commercial-item-details">
             <summary>Preco e impostos</summary>
             ${branchInfo ? '<small>' + escapeHtml(branchInfo) + '</small>' : ''}
-            <small>Base ${money(item.preco_sem_imposto || 0)} · Tributos ${money(item.tributos || 0)}</small>
-            <small class="fiscal-breakdown">${escapeHtml(formatFiscalBreakdown(item.fiscal_details))}</small>
             <small class="fiscal-inline-status">${escapeHtml(formatFiscalStatus(item.fiscal_status))}</small>
             ${item.fiscal_warnings?.length ? `<small class="fiscal-warning">${escapeHtml(formatFiscalWarnings(item.fiscal_warnings))}</small>` : ''}
           </details></td>
         <td><input type="number" min="1" value="${escapeHtml(item.quantidade)}" data-cart-qty="${index}"></td>
-        <td>${money(item.preco)}</td>
-        <td><input type="number" min="0" step="0.01" value="${escapeHtml(item.desconto_percentual)}" data-cart-discount="${index}"></td>
-        <td>${money(rowTotal)}</td>
+        ${renderDocumentTaxCells(item, `<input type="number" min="0" max="100" step="0.01" value="${escapeHtml(item.desconto_percentual)}" data-cart-discount="${index}" aria-label="Desconto sobre preco base">`)}
         <td><button class="sap-remove-button" type="button" data-cart-remove="${index}" title="Remover" aria-label="Remover ${escapeHtml(item.codigo)}">×</button></td>
       </tr>
     `;
-  }).join('') : '<tr><td colspan="6" class="sap-empty-row">Nenhum produto adicionado ainda.</td></tr>';
+  }).join('') : '<tr><td colspan="10" class="sap-empty-row">Nenhum produto adicionado ainda.</td></tr>';
   return `
-    <table class="sap-items-table">
+    <table class="sap-items-table commercial-tax-table">
       <thead>
         <tr>
-          <th>Produto</th><th>Qtde</th><th>Preco</th><th>Desc. %</th><th>Total</th><th></th>
+          <th>Produto</th><th>Qtde</th><th>Base unit.</th><th>Desc. %</th><th>Base c/ desc.</th><th>ST unit.</th><th>IPI unit.</th><th>Final unit.</th><th>Total</th><th></th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -610,6 +603,8 @@ function validateCommercialDocument(payload, label, options = {}) {
     if (!String(item.codigo || '').trim()) throw new Error(prefix + 'codigo do produto ausente.');
     if (Number(item.quantidade || 0) <= 0) throw new Error(prefix + 'quantidade deve ser maior que zero.');
     if (Number(item.preco || 0) <= 0) throw new Error(prefix + 'preco invalido.');
+    if (item.fiscal_status === 'CALCULANDO') throw new Error(prefix + 'aguarde o calculo fiscal.');
+    if (!calculateDocumentItemAmounts(item).available) throw new Error(prefix + 'composicao fiscal indisponivel. Consulte a rota e o NCM.');
   });
 }
 
@@ -639,11 +634,10 @@ async function saveCurrentOrder() {
       items: orderItems
     };
     validateCommercialDocument(payload, 'o pedido');
-    const subtotal = orderItems.reduce((sum, item) => sum + item.preco * item.quantidade, 0);
-    const total = orderItems.reduce((sum, item) => sum + item.preco * item.quantidade * (1 - item.desconto_percentual / 100), 0);
-    payload.subtotal = subtotal;
-    payload.desconto_total = subtotal - total;
-    payload.total = total;
+    const amounts = getDocumentTaxTotals(orderItems);
+    payload.subtotal = amounts.base;
+    payload.desconto_total = amounts.discount;
+    payload.total = amounts.total;
     const data = await supabaseCreateOrder(payload);
     orderItems = [];
     orderCreateSaved = true;
