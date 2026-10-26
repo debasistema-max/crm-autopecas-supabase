@@ -1133,7 +1133,7 @@ function showDocumentEditForm(kind, row) {
       <div class="sap-footer-actions">
         <input id="${kind}EditId" type="hidden" value="${escapeHtml(row.id || '')}">
         <button class="btn btn-primary" id="${kind}EditSaveButton" type="button">Salvar itens</button>
-        <button class="btn btn-secondary" id="${kind}PdfButton" type="button" title="Imprimir ou salvar como PDF">PDF</button>
+        <button class="btn btn-secondary" id="${kind}PdfButton" type="button" title="Baixar PDF horizontal">Baixar PDF</button>
         <button class="btn btn-secondary" id="${kind}XlsxButton" type="button" title="Baixar planilha do documento">XLSX</button>
         <button class="btn btn-secondary" id="${kind}EditConfirmButton" type="button">${kind === 'pedidos' ? 'Efetivar pedido' : 'Efetivar cotacao'}</button>
         <button class="btn btn-ghost" id="${kind}EditCancelDocumentButton" type="button">${kind === 'pedidos' ? 'Cancelar pedido' : 'Cancelar cotacao'}</button>
