@@ -30,8 +30,8 @@
       <form id="passwordForm" class="stack" hidden>
         <h2>Defina sua nova senha</h2>
         <p class="muted" id="passwordHelp">No primeiro acesso, troque a senha inicial entregue pela IPS.</p>
-        <label>Nova senha<input id="newPassword" type="password" autocomplete="new-password" minlength="12" maxlength="72" required></label>
-        <label>Confirmar senha<input id="confirmPassword" type="password" autocomplete="new-password" minlength="12" maxlength="72" required></label>
+        <label>Nova senha<input id="newPassword" type="password" autocomplete="new-password" minlength="8" maxlength="72" required></label>
+        <label>Confirmar senha<input id="confirmPassword" type="password" autocomplete="new-password" minlength="8" maxlength="72" required></label>
         <button class="button primary" type="submit">Salvar senha</button>
         <p id="passwordMessage" class="message" aria-live="polite"></p>
       </form>
@@ -75,6 +75,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0/dist/umd/supabase.js" integrity="sha384-iLddHTLokph6Omwoyid4XKxHaWa6w41BnoEj0q5oOrzmYPpHIKt1wyjReA7s//pP" crossorigin="anonymous"></script>
   <script src="js/config.js?v=20260912-1"></script>
   <script src="../js/session_guard.js?v=20261012-security-1"></script>
-  <script src="js/app.js?v=20261012-security-1"></script>
+  <script src="js/app.js?v=20261027-password-eight-1"></script>
 </body>
 </html>

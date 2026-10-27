@@ -6,6 +6,39 @@ const vm = require('node:vm');
 const { stripTypeScriptTypes } = require('node:module');
 const read = (file) => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
 
+test('B2B initial and replacement passwords share the 8-72 character policy in browser and server', () => {
+  const validators = [];
+  for (const [file, name] of [
+    ['supabase/functions/b2b-admin/index.ts', 'validInitialPassword'],
+    ['supabase/functions/b2b-change-password/index.ts', 'validPassword']
+  ]) {
+    const context = vm.createContext({ Deno: { serve() {} } });
+    vm.runInContext(stripTypeScriptTypes(read(file).replace(/^import[^\n]+\n/, ''), { mode: 'transform' }), context);
+    validators.push(value => Boolean(context[name](value)));
+  }
+  const partners = vm.createContext({});
+  vm.runInContext(read('public/js/partners.js'), partners);
+  validators.push(value => partners.isValidB2BInitialPassword(value));
+  const portal = read('public/b2b/js/app.js');
+  const condition = portal.match(/if \((password\.length[^\n]+)\) \{/)[1];
+  const portalContext = vm.createContext({});
+  const portalValidator = vm.runInContext(`password => !(${condition})`, portalContext);
+  validators.push(portalValidator);
+  for (const validate of validators) {
+    for (const value of ['Abcde123', 'Abcdef123', 'Abcdefgh123', 'Abcdefghi123', 'Aa1' + 'x'.repeat(69)]) {
+      assert.equal(validate(value), true, `length ${value.length} must pass`);
+    }
+    for (const value of ['', 'Abcd123', 'Aa1' + 'x'.repeat(70), 'abcdefgh', 'ABCDEFGH', 'Abcdefgh', '12345678']) {
+      assert.equal(validate(value), false, `invalid length or composition ${value.length}`);
+    }
+  }
+  const html = read('public/b2b/index.html');
+  assert.match(html, /id="newPassword"[^>]*minlength="8"[^>]*maxlength="72"/);
+  assert.match(html, /id="confirmPassword"[^>]*minlength="8"[^>]*maxlength="72"/);
+  assert.match(read('public/js/partners.js'), /id="clientB2BInitialPassword"[^>]*minlength="8"[^>]*maxlength="72"/);
+  assert.match(portal, /Use de 8 a 72 caracteres/);
+});
+
 function harness(overrides = {}, behavior = {}) {
   const env = { SUPABASE_URL: 'https://mtwvxyvpnbgwgltelozw.supabase.co', SUPABASE_ANON_KEY: 'test-public',
     SUPABASE_SERVICE_ROLE_KEY: 'test-server', DATA_SYNC_TARGET: 'homologacao', DATA_SYNC_GITHUB_TOKEN: 'test-token',

@@ -53,7 +53,7 @@ function technicalLoginEmail(loginName: string) {
 
 function validInitialPassword(value: unknown) {
   const text = String(value || '');
-  return text.length >= 12 && text.length <= 72 && /[a-z]/.test(text) && /[A-Z]/.test(text) && /[0-9]/.test(text) ? text : '';
+  return text.length >= 8 && text.length <= 72 && /[a-z]/.test(text) && /[A-Z]/.test(text) && /[0-9]/.test(text) ? text : '';
 }
 
 async function findUserByEmail(admin: ReturnType<typeof createClient>, targetEmail: string) {

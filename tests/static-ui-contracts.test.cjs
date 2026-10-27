@@ -754,7 +754,7 @@ test('security hardening keeps secrets server-side and minimizes anonymous acces
   const b2bPassword = read('supabase/functions/b2b-change-password/index.ts');
   assert.match(b2bPassword, /updateUserById/);
   assert.match(b2bPassword, /complete_b2b_password_change_for_user/);
-  assert.match(b2bPassword, /length >= 12/);
+  assert.match(b2bPassword, /length >= 8/);
   assert.doesNotMatch(read('b2b/js/app.js'), /rpc\('complete_b2b_password_change'/);
 
   const cadastro = read('supabase/functions/cadastro-cliente/index.ts');
