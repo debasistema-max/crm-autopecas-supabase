@@ -28,14 +28,20 @@ const COMPANY_LOGO_ALLOWED_TYPES = {
 
 let cachedCompanySettings = null;
 let cachedFullCompanySettings = null;
+let companySettingsPromise = null;
 let companyLogoPreviewObjectUrl = '';
 
 async function loadCompanySettings() {
   if (cachedCompanySettings) return cachedCompanySettings;
-  const settings = await fetchCompanySettings();
-  cachedCompanySettings = settings;
-  applyCompanyIdentity(settings);
-  return settings;
+  if (!companySettingsPromise) {
+    companySettingsPromise = fetchCompanySettings().then((settings) => {
+      // A full settings load/save may have completed while the public request was pending.
+      if (!cachedCompanySettings) cachedCompanySettings = settings;
+      applyCompanyIdentity(cachedCompanySettings);
+      return cachedCompanySettings;
+    }).finally(() => { companySettingsPromise = null; });
+  }
+  return companySettingsPromise;
 }
 
 async function fetchCompanySettings() {
