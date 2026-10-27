@@ -11,7 +11,7 @@ function harness() {
   const listeners = {};
   const nodes = new Map();
   const node = (id) => {
-    if (!nodes.has(id)) nodes.set(id, { value: '', hidden: false, textContent: '',
+    if (!nodes.has(id)) nodes.set(id, { value: '', hidden: false, textContent: '', dataset: {},
       addEventListener(event, callback) { this[event] = callback; } });
     return nodes.get(id);
   };
@@ -67,6 +67,7 @@ function harness() {
   context.window = context;
   context.supabase = { createClient: () => client };
   function load(file) {
+    if (file === 'public/b2b/js/app.js') load('public/b2b/js/photo_viewer.js');
     const canonical = path.join(root, file);
     const mirrored = path.join(root, file.replace(/^public\//, ''));
     vm.runInContext(fs.readFileSync(fs.existsSync(canonical) ? canonical : mirrored, 'utf8'), context);

@@ -9,7 +9,7 @@
   <title>Portal do Cliente | IPS do Brasil</title>
   <link rel="stylesheet" href="css/portal.css?v=20260912-1">
   <link rel="stylesheet" href="css/auth.css?v=20261009-promotion-1">
-  <link rel="stylesheet" href="css/catalog.css?v=20260918-1">
+  <link rel="stylesheet" href="css/catalog.css?v=20261027-photo-zoom-1">
 </head>
 <body>
   <main id="authView" class="auth-shell">
@@ -66,15 +66,31 @@
     <div class="image-dialog-content">
       <button id="imageDialogClose" class="icon-button image-dialog-close" type="button" aria-label="Fechar detalhes">×</button>
       <div class="product-detail-media">
-        <img id="imageDialogImage" alt="" referrerpolicy="no-referrer">
+        <button id="productPhotoExpand" class="product-photo-expand" type="button" aria-label="Ampliar foto do produto" title="Ampliar foto" disabled>
+          <img id="imageDialogImage" alt="" referrerpolicy="no-referrer">
+        </button>
         <p id="imageDialogCaption"></p>
       </div>
       <div id="imageDialogDetails" class="product-detail-content"></div>
     </div>
   </dialog>
+  <dialog id="productPhotoDialog" class="dialog product-photo-dialog" aria-labelledby="productPhotoTitle">
+    <header class="product-photo-toolbar">
+      <strong id="productPhotoTitle">Foto do produto</strong>
+      <button id="productPhotoClose" class="icon-button" type="button" aria-label="Fechar foto" title="Fechar foto">×</button>
+    </header>
+    <label class="product-photo-zoom">Zoom <output id="productPhotoZoomValue">100%</output>
+      <input id="productPhotoZoom" type="range" min="100" max="300" step="25" value="100" aria-label="Zoom da foto">
+    </label>
+    <div id="productPhotoViewport" class="product-photo-viewport">
+      <div class="product-photo-canvas"><img id="productPhotoImage" alt="" referrerpolicy="no-referrer"></div>
+    </div>
+    <p id="productPhotoError" role="status" hidden>Não foi possível carregar a foto ampliada.</p>
+  </dialog>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0/dist/umd/supabase.js" integrity="sha384-iLddHTLokph6Omwoyid4XKxHaWa6w41BnoEj0q5oOrzmYPpHIKt1wyjReA7s//pP" crossorigin="anonymous"></script>
   <script src="js/config.js?v=20260912-1"></script>
   <script src="../js/session_guard.js?v=20261012-security-1"></script>
-  <script src="js/app.js?v=20261027-password-eight-1"></script>
+  <script src="js/photo_viewer.js?v=20261027-photo-zoom-1"></script>
+  <script src="js/app.js?v=20261027-photo-zoom-1"></script>
 </body>
 </html>
