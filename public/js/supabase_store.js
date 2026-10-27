@@ -1311,6 +1311,9 @@ async function supabaseSaveUser(payload) {
   }
 
   let userId = payload.id_usuario || payload.id || '';
+  if (userId && payload.senha) {
+    throw new Error('A senha nao foi alterada. Use a recuperacao de senha na tela de acesso.');
+  }
   const [{ data: sameUser, error: sameUserError }, { data: sameEmail, error: sameEmailError }] = await Promise.all([
     supabaseClient.from('profiles').select('id').eq('usuario', profile.usuario).maybeSingle(),
     supabaseClient.from('profiles').select('id').eq('email', profile.email).maybeSingle()

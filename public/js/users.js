@@ -15,7 +15,7 @@ async function renderUsers(container) {
           <label class="span-2">Perfil
             <select id="newUserProfile"><option>VENDEDOR</option><option>SUPERVISOR</option><option>ADMIN</option></select>
           </label>
-          <label class="span-3">Senha inicial<input id="newUserPassword" type="password" autocomplete="new-password"></label>
+          <label class="span-3" id="newUserPasswordField">Senha inicial<input id="newUserPassword" type="password" autocomplete="new-password" required></label>
           <label class="span-2">Ativo
             <select id="newUserActive"><option value="true">Sim</option><option value="false">Nao</option></select>
           </label>
@@ -75,6 +75,9 @@ function fillUserForm(user) {
   document.getElementById('newUserProfile').value = user.perfil || 'VENDEDOR';
   document.getElementById('newUserActive').value = user.ativo ? 'true' : 'false';
   document.getElementById('newUserPassword').value = '';
+  document.getElementById('newUserPassword').disabled = true;
+  document.getElementById('newUserPassword').required = false;
+  document.getElementById('newUserPasswordField').hidden = true;
   document.getElementById('userMessage').style.color = 'var(--muted)';
   document.getElementById('userMessage').textContent = 'Editando usuario ' + (user.usuario || '') + '.';
   document.getElementById('userForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -88,11 +91,15 @@ function clearUserForm() {
   document.getElementById('newUserProfile').value = 'VENDEDOR';
   document.getElementById('newUserActive').value = 'true';
   document.getElementById('newUserPassword').value = '';
+  document.getElementById('newUserPassword').disabled = false;
+  document.getElementById('newUserPassword').required = true;
+  document.getElementById('newUserPasswordField').hidden = false;
   document.getElementById('userMessage').textContent = '';
 }
 
 async function saveUserFromForm(event) {
   event.preventDefault();
+  const userId = document.getElementById('userId').value;
   const message = document.getElementById('userMessage');
   const button = event.submitter || document.querySelector('#userForm button[type="submit"]');
   message.textContent = 'Salvando...';
@@ -102,17 +109,18 @@ async function saveUserFromForm(event) {
   }
   try {
     await supabaseSaveUser({
-      id_usuario: document.getElementById('userId').value,
+      id_usuario: userId,
       usuario: document.getElementById('newUserLogin').value,
       nome: document.getElementById('newUserName').value,
       email: document.getElementById('newUserEmail').value,
       perfil: document.getElementById('newUserProfile').value,
-      senha: document.getElementById('newUserPassword').value,
+      senha: userId ? '' : document.getElementById('newUserPassword').value,
       ativo: document.getElementById('newUserActive').value === 'true'
     });
-    message.style.color = 'var(--success)';
-    message.textContent = 'Usuario salvo.';
     await renderUsers(document.getElementById('content'));
+    const resultMessage = document.getElementById('userMessage');
+    resultMessage.style.color = 'var(--success)';
+    resultMessage.textContent = userId ? 'Perfil atualizado. A senha nao foi alterada.' : 'Usuario criado.';
   } catch (error) {
     message.style.color = 'var(--accent)';
     message.textContent = error.message;
