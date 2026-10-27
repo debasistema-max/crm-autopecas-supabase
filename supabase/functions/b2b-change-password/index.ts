@@ -28,7 +28,7 @@ function env(name: string) {
 
 function validPassword(value: unknown) {
   const password = String(value || '');
-  return password.length >= 12 && password.length <= 72 &&
+  return password.length >= 8 && password.length <= 72 &&
     /[a-z]/.test(password) && /[A-Z]/.test(password) && /[0-9]/.test(password)
     ? password : '';
 }

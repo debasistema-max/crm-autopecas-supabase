@@ -2007,7 +2007,7 @@ function translateB2BAdminError(value) {
   const code = String(value || '').trim();
   const messages = {
     USUARIO_INVALIDO: 'O usuário deve ter de 4 a 50 caracteres e usar somente letras minúsculas, números, ponto, hífen ou sublinhado.',
-    SENHA_INICIAL_FRACA: 'A senha precisa ter de 10 a 72 caracteres, com pelo menos uma letra e um número.',
+    SENHA_INICIAL_FRACA: 'A senha precisa ter de 8 a 72 caracteres, com maiúscula, minúscula e número.',
     USUARIO_JA_VINCULADO_A_OUTRO_CLIENTE: 'Esse usuário já está vinculado a outro cliente. Escolha outro nome de usuário.',
     USUARIO_JA_EXISTE: 'Esse nome de usuário já está em uso. Escolha outro.',
     USUARIO_PERTENCE_A_EQUIPE_INTERNA: 'Esse usuário pertence à equipe interna e não pode ser usado no B2B.',

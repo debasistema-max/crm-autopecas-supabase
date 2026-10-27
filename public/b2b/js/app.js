@@ -222,8 +222,8 @@ function bindAuth() {
     const password = document.getElementById('newPassword').value;
     const confirmation = document.getElementById('confirmPassword').value;
     const message = document.getElementById('passwordMessage');
-    if (password.length < 12 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
-      return setMessage(message, 'Use 12 ou mais caracteres, com maiúscula, minúscula e número.', 'error');
+    if (password.length < 8 || password.length > 72 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
+      return setMessage(message, 'Use de 8 a 72 caracteres, com maiúscula, minúscula e número.', 'error');
     }
     if (password !== confirmation) return setMessage(message, 'As senhas não conferem.', 'error');
     if (state.context?.account?.must_change_password || state.context?.account?.activation_pending) {
