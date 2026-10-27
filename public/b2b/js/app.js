@@ -111,6 +111,7 @@ async function openProductDetails(product, img) {
   const enlarged = document.getElementById('imageDialogImage');
   const caption = document.getElementById('imageDialogCaption');
   const target = document.getElementById('imageDialogDetails');
+  document.getElementById('productPhotoExpand').disabled = true;
   const source = img && !img.hidden ? (img.currentSrc || img.src) : (product.image_url || officialProductImage(product.product_code));
   enlarged.hidden = !source;
   enlarged.src = source || '';
@@ -242,6 +243,7 @@ function bindAuth() {
 }
 
 function bindPortal() {
+  bindB2BPhotoViewer();
   document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => navigate(button.dataset.view)));
   document.getElementById('logoutButton').addEventListener('click', () => sessionGuard.logout());
   document.getElementById('cartButton').addEventListener('click', openCart);
