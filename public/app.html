@@ -9,19 +9,25 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>Nova Empresa | Portal Comercial</title>
+  <link rel="preload" href="assets/logo-ips-yokomitsu.png" as="image">
   <link rel="manifest" href="manifest.webmanifest?v=20261009-1">
   <link rel="stylesheet" href="css/theme.css?v=20261009-2">
-  <link rel="stylesheet" href="css/app.css?v=20261022-route-pricing-1">
+  <link rel="stylesheet" href="css/app.css?v=20261027-startup-1">
   <link rel="stylesheet" href="css/seller.css?v=20261026-desktop-width-1">
   <link rel="stylesheet" href="css/commercial_prices.css?v=20261026-base-discount-1">
 </head>
 <body class="app-page">
-  <div class="app-shell">
+  <div id="appStartup" class="app-startup" role="status" aria-live="polite">
+    <img src="assets/logo-ips-yokomitsu.png" alt="IPS / Yokomitsu" width="160" height="100" fetchpriority="high">
+    <p>Preparando seu ambiente...</p>
+    <noscript>Ative o JavaScript para acessar o portal.</noscript>
+  </div>
+  <div class="app-shell" hidden>
     <button class="sidebar-backdrop" id="sidebarBackdrop" type="button" aria-label="Fechar menu"></button>
     <aside class="sidebar" id="sidebar" aria-label="Navegação principal">
       <div class="sidebar-header">
         <a class="sidebar-brand" href="#dashboard" aria-label="Ir para o início">
-          <img src="assets/logo-neutral.svg" alt="" class="sidebar-logo" data-company-logo>
+          <img src="assets/logo-ips-yokomitsu.png" alt="" class="sidebar-logo" data-company-logo>
           <span class="sidebar-brand-copy"><strong data-company-name>Nova Empresa</strong><small>Portal Comercial</small></span>
         </a>
       </div>
@@ -67,7 +73,7 @@
       <header class="topbar">
         <button class="icon-button" id="menuButton" type="button" aria-label="Abrir menu"></button>
         <a class="seller-brand" href="#dashboard" hidden aria-label="Portal do vendedor">
-          <img src="assets/logo-neutral.svg" alt="" data-company-logo>
+          <img src="assets/logo-ips-yokomitsu.png" alt="" data-company-logo>
           <span><strong>Portal do vendedor</strong><small data-company-name>Portal Comercial</small></span>
         </a>
         <div class="topbar-title">
@@ -85,7 +91,7 @@
       <main class="content" id="content" tabindex="-1"></main>
     </section>
   </div>
-  <nav class="mobile-nav" id="mobileNav" aria-label="Acesso rapido">
+  <nav class="mobile-nav" id="mobileNav" aria-label="Acesso rapido" hidden>
     <button type="button" data-mobile-module="dashboard" data-seller-only hidden><span class="mobile-nav-icon" aria-hidden="true">IN</span><span>Inicio</span></button>
     <button type="button" data-mobile-module="products"><span class="mobile-nav-icon" aria-hidden="true">PR</span><span>Produtos</span></button>
     <button type="button" data-mobile-module="partners"><span class="mobile-nav-icon" aria-hidden="true">CL</span><span>Clientes</span></button>
@@ -93,30 +99,30 @@
     <button type="button" data-mobile-module="quoteReports"><span class="mobile-nav-icon" aria-hidden="true">CT</span><span>Cotacoes</span></button>
   </nav>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0/dist/umd/supabase.js" integrity="sha384-iLddHTLokph6Omwoyid4XKxHaWa6w41BnoEj0q5oOrzmYPpHIKt1wyjReA7s//pP" crossorigin="anonymous"></script>
-  <script src="js/vendor/xlsx.full.min.js?v=0.20.3"></script>
-  <script src="js/config.js?v=20260701-5"></script>
-  <script src="js/utils/format.js?v=20261022-vehicle-makers-1"></script>
-  <script src="js/supabase.js?v=20260701-5"></script>
-  <script src="js/session_guard.js?v=20261012-security-1"></script>
-  <script src="js/supabase_store.js?v=20261027-password-eight-1"></script>
-  <script src="js/cnpj_lookup.js?v=20260825-1"></script>
-  <script src="js/company_settings.js?v=20261009-2"></script>
-  <script src="js/auth.js?v=20261012-security-1"></script>
-  <script src="js/components/ui.js?v=20260826-2"></script>
-  <script src="js/dashboard.js?v=20261005-2"></script>
-  <script src="js/products.js?v=20261026-visible-filters-1"></script>
-  <script src="js/partners.js?v=20261027-password-eight-1"></script>
-  <script src="js/commercial_prices.js?v=20261026-base-discount-1"></script>
-  <script src="js/orders.js?v=20261026-base-discount-1"></script>
-  <script src="js/imports.js?v=20261022-vehicle-makers-1"></script>
-  <script src="js/data_sync.js?v=20261021-local-catalog-sync-1"></script>
-  <script src="js/transfers.js?v=20260827-1"></script>
-  <script src="js/cadastros.js?v=20260828-1"></script>
-  <script src="js/document_exports.js?v=20261026-direct-pdf-1"></script>
-  <script src="js/quotes.js?v=20261026-direct-pdf-1"></script>
-  <script src="js/tax_rules.js?v=20260828-1"></script>
-  <script src="js/users.js?v=20260828-1"></script>
-  <script src="js/app.js?v=20261021-seller-1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0/dist/umd/supabase.js" integrity="sha384-iLddHTLokph6Omwoyid4XKxHaWa6w41BnoEj0q5oOrzmYPpHIKt1wyjReA7s//pP" crossorigin="anonymous" defer></script>
+  <script src="js/vendor/xlsx.full.min.js?v=0.20.3" defer></script>
+  <script src="js/config.js?v=20260701-5" defer></script>
+  <script src="js/utils/format.js?v=20261022-vehicle-makers-1" defer></script>
+  <script src="js/supabase.js?v=20260701-5" defer></script>
+  <script src="js/session_guard.js?v=20261012-security-1" defer></script>
+  <script src="js/supabase_store.js?v=20261027-password-eight-1" defer></script>
+  <script src="js/cnpj_lookup.js?v=20260825-1" defer></script>
+  <script src="js/company_settings.js?v=20261027-startup-1" defer></script>
+  <script src="js/auth.js?v=20261012-security-1" defer></script>
+  <script src="js/components/ui.js?v=20260826-2" defer></script>
+  <script src="js/dashboard.js?v=20261005-2" defer></script>
+  <script src="js/products.js?v=20261026-visible-filters-1" defer></script>
+  <script src="js/partners.js?v=20261027-password-eight-1" defer></script>
+  <script src="js/commercial_prices.js?v=20261026-base-discount-1" defer></script>
+  <script src="js/orders.js?v=20261026-base-discount-1" defer></script>
+  <script src="js/imports.js?v=20261022-vehicle-makers-1" defer></script>
+  <script src="js/data_sync.js?v=20261021-local-catalog-sync-1" defer></script>
+  <script src="js/transfers.js?v=20260827-1" defer></script>
+  <script src="js/cadastros.js?v=20260828-1" defer></script>
+  <script src="js/document_exports.js?v=20261026-direct-pdf-1" defer></script>
+  <script src="js/quotes.js?v=20261026-direct-pdf-1" defer></script>
+  <script src="js/tax_rules.js?v=20260828-1" defer></script>
+  <script src="js/users.js?v=20260828-1" defer></script>
+  <script src="js/app.js?v=20261027-startup-1" defer></script>
 </body>
 </html>

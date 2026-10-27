@@ -80,6 +80,9 @@ function bootstrapAppShell() {
   setupNavigation();
   setupMobileNavigation();
   setupSellerNavigation();
+  document.querySelector('.app-shell').hidden = false;
+  document.getElementById('mobileNav').hidden = false;
+  document.getElementById('appStartup').hidden = true;
   CrmUi.observeResponsiveTables(document.getElementById('content'));
   const initialHash = location.hash.replace('#', '') || 'dashboard';
   const initial = getModuleRoute(initialHash);
