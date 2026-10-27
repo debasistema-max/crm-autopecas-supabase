@@ -552,9 +552,7 @@ function downloadImportBatchCsv(lines, filename) {
 }
 
 function importBatchCsvCell(value) {
-  let text = String(value == null ? '' : value).replace(/"/g, '""');
-  if (/^[=+\-@]/.test(text)) text = `'${text}`;
-  return /[;"\n\r]/.test(text) ? `"${text}"` : text;
+  return csvCell(value);
 }
 
 function importBatchDateStamp() {
