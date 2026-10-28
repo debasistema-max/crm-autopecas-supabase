@@ -203,9 +203,6 @@ async function supabaseSaveCompanySettings(payload = {}) {
   cachedCompanySettings = normalizeCompanySettings(data || record);
   cachedFullCompanySettings = cachedCompanySettings;
   applyCompanyIdentity(cachedCompanySettings);
-  if (typeof supabaseLog === 'function') {
-    await supabaseLog('ATUALIZAR_CONFIG_EMPRESA', 'company_settings', 'singleton', Object.assign({}, cachedCompanySettings, { cnpj: record.cnpj }));
-  }
   return cachedCompanySettings;
 }
 

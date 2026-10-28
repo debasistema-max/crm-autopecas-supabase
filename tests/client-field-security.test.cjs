@@ -120,6 +120,6 @@ test('portal promotion preserves an existing discount and seller through the sco
 
 test('entry points invalidate the store cache for the scoped client RPCs', () => {
   for (const file of ['public/app.html', 'public/index.html']) {
-    assert.match(fs.readFileSync(file, 'utf8'), /js\/supabase_store\.js\?v=20261027-client-fields-1/);
+    assert.match(fs.readFileSync(file, 'utf8'), /js\/supabase_store\.js\?v=20261028-server-audit-1/);
   }
 });

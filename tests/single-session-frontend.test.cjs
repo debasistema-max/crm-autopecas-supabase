@@ -17,7 +17,6 @@ function harness() {
   };
   let active = true;
   let rpcError = null;
-  let logError = null;
   let signInError = null;
   let restoredSession = null;
   let authCallback;
@@ -46,10 +45,7 @@ function harness() {
       async signOut(options) { calls.push(['signOut', options.scope]); return {}; }
     },
     async rpc(name) { calls.push(name); return { data: { active }, error: rpcError }; },
-    from(table) {
-      assert.equal(table, 'logs');
-      return { async insert(row) { calls.push(row); return { error: logError }; } };
-    }
+    from() { assert.fail('session flow must not insert browser audit records'); }
   };
   const context = vm.createContext({ console: { warn: (...args) => warnings.push(args) },
     URLSearchParams,
@@ -75,7 +71,7 @@ function harness() {
   load('public/js/session_guard.js');
   return { context, client, calls, warnings, listeners, node, load,
     poll: () => interval(), setActive: (value) => { active = value; },
-    setRpcError: (value) => { rpcError = value; }, setLogError: (value) => { logError = value; },
+    setRpcError: (value) => { rpcError = value; },
     setRestoredSession: (value) => { restoredSession = value; },
     emitAuth: (event, session) => authCallback(event, session),
     async flushAuth() { while (deferred.length) await deferred.shift()(); },
@@ -117,11 +113,10 @@ test('temporary status errors do not disconnect or claim', async () => {
   assert.equal(h.warnings.length, 1);
 });
 
-test('CRM explicit login claims once, restore and polls never reclaim, login audit failure is nonfatal', async () => {
+test('CRM explicit login claims once; restore and polls never reclaim or send browser audit', async () => {
   const h = harness(); h.load('public/js/supabase_store.js');
   vm.runInContext(`supabaseCurrentProfile = async () => ({ usuario: 'mock', perfil: 'VENDEDOR' });
     supabaseModules = async () => [];`, h.context);
-  h.setLogError(new Error('audit rejected'));
   // Mock auth ignores credentials; no passwords or real accounts are used.
   await h.context.supabaseLogin('mock@example.invalid', {});
   await h.context.supabaseValidateSession(); await h.poll();
@@ -130,20 +125,17 @@ test('CRM explicit login claims once, restore and polls never reclaim, login aud
   assert.equal(h.calls[2], 'claim_app_session');
   assert.ok(!h.calls.includes('signIn'));
   assert.ok(!h.calls.includes('resolve_login_email'));
-  assert.equal(h.warnings.length, 1);
-  assert.equal(h.calls.find((call) => call.acao === 'LOGIN').user_id, 'own-id');
+  assert.equal(h.warnings.length, 0);
+  assert.ok(!h.calls.some((call) => call && call.acao === 'LOGIN'));
 });
 
-test('failed explicit login never claims and audit uses authenticated own ID, propagating errors', async () => {
+test('failed explicit login never claims; obsolete browser audit helper fails closed', async () => {
   const h = harness(); h.load('public/js/supabase_store.js');
   h.setSignInError(new Error('invalid'));
   await assert.rejects(h.context.supabaseLogin('mock@example.invalid', {}), /Usuario ou senha invalidos/);
   assert.ok(!h.calls.includes('claim_app_session'));
   assert.ok(!h.calls.includes('setSession'));
-  await h.context.supabaseLog('UPDATE', 'profiles', 'other-id', {});
-  assert.equal(h.calls.find((call) => call.acao === 'UPDATE').user_id, 'own-id');
-  h.setLogError(new Error('audit rejected'));
-  await assert.rejects(h.context.supabaseLog('UPDATE', 'profiles', 'other-id', {}), /audit rejected/);
+  await assert.rejects(h.context.supabaseLog('UPDATE', 'profiles', 'other-id', {}), /Auditoria exclusiva do servidor/);
 });
 
 test('CRM rejects malformed Edge sessions and setSession errors generically without claims', async () => {
