@@ -82,8 +82,8 @@ test('log queries request provenance; updated entry points invalidate audit-rela
   assert.match(store, /id_entidade, audit_source/);
   for (const file of ['public/app.html', 'public/index.html']) {
     const html = fs.readFileSync(file, 'utf8');
-    assert.ok(html.includes('js/supabase_store.js?v=20261028-server-audit-1'));
+    assert.ok(html.includes('js/supabase_store.js?v=20261028-internal-users-1'));
     assert.ok(html.includes('js/company_settings.js?v=20261028-server-audit-1'));
   }
-  assert.ok(fs.readFileSync('public/app.html', 'utf8').includes('js/users.js?v=20261028-server-audit-1'));
+  assert.ok(fs.readFileSync('public/app.html', 'utf8').includes('js/users.js?v=20261028-internal-users-1'));
 });

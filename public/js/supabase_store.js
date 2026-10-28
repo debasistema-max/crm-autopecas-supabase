@@ -1287,6 +1287,36 @@ async function supabaseSaveUser(payload) {
   if (userId && payload.senha) {
     throw new Error('A senha nao foi alterada. Use a recuperacao de senha na tela de acesso.');
   }
+  if (!userId) {
+    if (!payload.senha) throw new Error('Informe uma senha inicial para novo usuario.');
+    let response;
+    try {
+      response = await supabaseClient.functions.invoke('crm-admin-users', {
+        body: Object.assign({}, profile, { senha: payload.senha })
+      });
+    } catch {
+      throw new Error('Nao foi possivel confirmar a criacao do usuario. Consulte o administrador antes de tentar novamente.');
+    }
+    let code = response.data && response.data.error;
+    if (response.error && response.error.context && typeof response.error.context.json === 'function') {
+      try { code = (await response.error.context.json()).error || code; } catch { /* Keep a generic error. */ }
+    }
+    if (response.error || code || !response.data || !response.data.profile || !response.data.profile.id) {
+      const messages = {
+        USUARIO_DUPLICADO: 'Ja existe um usuario com este login.',
+        EMAIL_DUPLICADO: 'Ja existe um usuario com este email.',
+        APENAS_ADMIN: 'Somente ADMIN pode criar usuarios.',
+        SESSAO_SUBSTITUIDA: 'Sua sessao foi encerrada. Entre novamente.',
+        SESSAO_ADMIN_INVALIDA: 'Sua sessao foi encerrada. Entre novamente.',
+        SENHA_INICIAL_INVALIDA: 'A senha inicial deve ter de 8 a 72 caracteres.',
+        DADOS_USUARIO_INVALIDOS: 'Confira login, nome, email e perfil do usuario.',
+        CRIACAO_USUARIO_EM_ANDAMENTO: 'Ja existe uma criacao em andamento para este login ou email. Consulte o administrador.',
+        CRIACAO_USUARIO_REQUER_CONFERENCIA: 'A criacao precisa de conferencia pelo administrador. Nao tente novamente agora.'
+      };
+      throw new Error(messages[code] || 'Nao foi possivel criar o usuario. Consulte o administrador.');
+    }
+    return response.data.profile;
+  }
   const [{ data: sameUser, error: sameUserError }, { data: sameEmail, error: sameEmailError }] = await Promise.all([
     supabaseClient.from('profiles').select('id').eq('usuario', profile.usuario).maybeSingle(),
     supabaseClient.from('profiles').select('id').eq('email', profile.email).maybeSingle()
@@ -1296,28 +1326,9 @@ async function supabaseSaveUser(payload) {
   if (sameUser && sameUser.id !== userId) throw new Error('Ja existe um usuario com este login.');
   if (sameEmail && sameEmail.id !== userId) throw new Error('Ja existe um usuario com este email.');
 
-  if (!userId) {
-    if (!payload.senha) throw new Error('Informe uma senha inicial para novo usuario.');
-    const previousSession = await supabaseClient.auth.getSession();
-    const { data: signupData, error: signupError } = await supabaseClient.auth.signUp({
-      email: profile.email,
-      password: payload.senha,
-      options: { data: { usuario: profile.usuario, nome: profile.nome } }
-    });
-    if (previousSession.data.session) {
-      await supabaseClient.auth.setSession({
-        access_token: previousSession.data.session.access_token,
-        refresh_token: previousSession.data.session.refresh_token
-      });
-    }
-    if (signupError) throw signupError;
-    userId = signupData.user && signupData.user.id;
-    if (!userId) throw new Error('Usuario Auth nao foi criado no Supabase.');
-  }
-
   const { data, error } = await supabaseClient
     .from('profiles')
-    .upsert(Object.assign({ id: userId }, profile), { onConflict: 'id' })
+    .update(profile).eq('id', userId)
     .select('id, usuario, nome, email, perfil, ativo, ultimo_login')
     .single();
   if (error) throw error;
