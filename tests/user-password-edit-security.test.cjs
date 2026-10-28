@@ -127,7 +127,7 @@ test('failures do not show success and restore the save button', async () => {
 
 test('both login and app invalidate the updated store cache; app also invalidates users UI', () => {
   for (const file of ['public/app.html', 'public/index.html']) {
-    assert.match(fs.readFileSync(file, 'utf8'), /js\/supabase_store\.js\?v=20261027-security-2/);
+    assert.match(fs.readFileSync(file, 'utf8'), /js\/supabase_store\.js\?v=20261027-client-fields-1/);
   }
   assert.match(fs.readFileSync('public/app.html', 'utf8'), /js\/users\.js\?v=20261027-security-2/);
 });
