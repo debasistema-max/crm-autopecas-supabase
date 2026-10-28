@@ -170,7 +170,7 @@ function renderLogsTable(logs) {
   return `
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Data</th><th>Usuario</th><th>Acao</th><th>Entidade</th><th>ID</th></tr></thead>
+        <thead><tr><th>Data</th><th>Usuario</th><th>Acao</th><th>Entidade</th><th>ID</th><th>Origem</th></tr></thead>
         <tbody>
           ${logs.map((log) => `
             <tr>
@@ -179,6 +179,7 @@ function renderLogsTable(logs) {
               <td>${escapeHtml(log.acao)}</td>
               <td>${escapeHtml(log.entidade)}</td>
               <td>${escapeHtml(log.id_entidade)}</td>
+              <td>${log.audit_source === 'SERVER' ? 'Servidor' : 'Legado (nao verificado)'}</td>
             </tr>
           `).join('')}
         </tbody>

@@ -34,19 +34,6 @@ async function supabaseLogin(usuario, senha) {
   const guard = supabaseAppSessionGuard();
   await guard.claimAfterSignIn();
   const profile = await supabaseCurrentProfile(user.id);
-  try {
-    const { error } = await supabaseClient.from('logs').insert({
-      user_id: user.id,
-      usuario: profile.usuario,
-      acao: 'LOGIN',
-      entidade: 'auth',
-      id_entidade: user.id,
-      dados_novos: { email: user.email, ip: null }
-    });
-    if (error) throw error;
-  } catch (error) {
-    console.warn('Nao foi possivel registrar o login:', error);
-  }
   const session = await supabaseSessionFromProfile(user, profile);
   guard.start();
   return session;
@@ -61,11 +48,6 @@ async function supabaseResolveLoginEmail(login) {
 
 async function supabaseLogout() {
   if (!isSupabaseReady()) return;
-  try {
-    await supabaseLog('LOGOUT', 'auth', getSessionId(), { ip: null });
-  } catch (error) {
-    console.warn(error);
-  }
   await supabaseAppSessionGuard().logout();
 }
 
@@ -1091,7 +1073,6 @@ async function supabaseSaveBusinessCarrier(payload = {}) {
     .select('id, cnpj, nome, telefone, email, endereco, cidade, estado, ativo, observacoes')
     .single();
   if (error) throw error;
-  await supabaseLog('SALVAR_TRANSPORTADORA', 'carriers', data.id, carrier);
   return data;
 }
 
@@ -1127,7 +1108,7 @@ async function supabaseSearchOrderCarriers(term = '') {
 async function supabaseGetLogs(filters) {
   let query = supabaseClient
     .from('logs')
-    .select('data_hora, usuario, acao, entidade, id_entidade')
+    .select('data_hora, usuario, acao, entidade, id_entidade, audit_source')
     .order('data_hora', { ascending: false })
     .limit(100);
   if (filters && filters.usuario) query = query.ilike('usuario', `%${filters.usuario}%`);
@@ -1188,7 +1169,6 @@ async function supabaseSavePortalCadastroSettings(payload = {}) {
     .select('key, value')
     .single();
   if (error) throw error;
-  await supabaseLog('ATUALIZAR_CONFIG_PORTAL_CADASTROS', 'settings', 'portal_cadastros', value);
   return data.value || value;
 }
 
@@ -1253,7 +1233,6 @@ async function supabaseUpdateCadastroCliente(payload) {
     .select('id, protocolo, status, codigo_sap_cliente, observacoes_internas')
     .single();
   if (error) throw error;
-  await supabaseLog('ATUALIZAR_CADASTRO_CLIENTE', 'cadastros_clientes', payload.id, updates);
   return data;
 }
 
@@ -1342,7 +1321,6 @@ async function supabaseSaveUser(payload) {
     .select('id, usuario, nome, email, perfil, ativo, ultimo_login')
     .single();
   if (error) throw error;
-  await supabaseLog('SALVAR_USUARIO', 'profiles', userId, profile);
   return data;
 }
 
@@ -1565,19 +1543,7 @@ function inferImportTypeFromMapping(mapping, currentType) {
 }
 
 async function supabaseLog(acao, entidade, idEntidade, dadosNovos) {
-  const session = getStoredSession() || {};
-  const { data, error: userError } = await supabaseClient.auth.getUser();
-  if (userError) throw userError;
-  if (!data?.user) throw new Error('Sessao nao autenticada.');
-  const { error } = await supabaseClient.from('logs').insert({
-    user_id: data.user.id,
-    usuario: session.usuario || null,
-    acao,
-    entidade,
-    id_entidade: idEntidade == null ? null : String(idEntidade),
-    dados_novos: dadosNovos || null
-  });
-  if (error) throw error;
+  throw new Error('Auditoria exclusiva do servidor. Atualize a pagina do CRM.');
 }
 
 const allowedProductFields = [
