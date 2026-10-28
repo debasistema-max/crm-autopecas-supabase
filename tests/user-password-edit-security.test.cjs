@@ -12,18 +12,24 @@ function storeFixture() {
   let stored;
   const client = {
     auth: {
-      async getSession() { calls.push('getSession'); return { data: { session: null } }; },
-      async signUp(input) { calls.push('signUp'); assert.equal(input.password, fictionalPassword);
-        return { data: { user: { id: 'fictional-created-user' } } }; },
+      async getSession() { assert.fail('must not replace the ADMIN session'); },
+      async signUp() { assert.fail('browser signup is forbidden'); },
       async updateUser() { assert.fail('unexpected password mutation'); }
     },
+    functions: { async invoke(name, input) {
+      assert.equal(name, 'crm-admin-users');
+      assert.equal(input.body.senha, fictionalPassword);
+      calls.push('server-create');
+      return { data: { profile: { id: 'fictional-created-user', ...input.body, senha: undefined } } };
+    } },
     from(table) {
       assert.equal(table, 'profiles');
       calls.push('profiles');
       return {
         select() { return { eq() { return { async maybeSingle() { return { data: null }; } }; } }; },
-        upsert(value) { stored = value; calls.push('upsert');
-          return { select() { return { async single() { return { data: value }; } }; } }; }
+        update(value) { stored = value; calls.push('update');
+          return { eq(column, id) { assert.equal(column, 'id');
+            return { select() { return { async single() { return { data: { id, ...value } }; } }; } }; } }; }
       };
     }
   };
@@ -67,16 +73,16 @@ test('editing the profile with a blank password does not mutate Auth credentials
   const h = storeFixture();
   const result = await h.c.supabaseSaveUser({ ...profile, senha: '' });
   assert.equal(result.id, profile.id_usuario);
-  assert.deepEqual(h.calls, ['profiles', 'profiles', 'profiles', 'upsert']);
+  assert.deepEqual(h.calls, ['profiles', 'profiles', 'profiles', 'update']);
   assert.ok(!Object.hasOwn(h.stored(), 'senha'));
 });
 
-test('new user still requires and sends its initial password only to Auth', async () => {
+test('new user sends the initial password only to the authorized server endpoint, without switching session', async () => {
   const h = storeFixture();
   const result = await h.c.supabaseSaveUser({ ...profile, id_usuario: '', senha: fictionalPassword });
   assert.equal(result.id, 'fictional-created-user');
-  assert.ok(h.calls.includes('signUp'));
-  assert.ok(!Object.hasOwn(h.stored(), 'senha'));
+  assert.deepEqual(h.calls, ['server-create']);
+  assert.equal(h.stored(), undefined);
   const empty = storeFixture();
   await assert.rejects(empty.c.supabaseSaveUser({ ...profile, id_usuario: '', senha: '' }), /senha inicial/);
   assert.ok(!empty.calls.includes('upsert'));
@@ -127,7 +133,7 @@ test('failures do not show success and restore the save button', async () => {
 
 test('both login and app invalidate the updated store cache; app also invalidates users UI', () => {
   for (const file of ['public/app.html', 'public/index.html']) {
-    assert.match(fs.readFileSync(file, 'utf8'), /js\/supabase_store\.js\?v=20261028-server-audit-1/);
+    assert.match(fs.readFileSync(file, 'utf8'), /js\/supabase_store\.js\?v=20261028-internal-users-1/);
   }
-  assert.match(fs.readFileSync('public/app.html', 'utf8'), /js\/users\.js\?v=20261028-server-audit-1/);
+  assert.match(fs.readFileSync('public/app.html', 'utf8'), /js\/users\.js\?v=20261028-internal-users-1/);
 });

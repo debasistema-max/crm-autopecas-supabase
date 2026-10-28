@@ -15,7 +15,7 @@ async function renderUsers(container) {
           <label class="span-2">Perfil
             <select id="newUserProfile"><option>VENDEDOR</option><option>SUPERVISOR</option><option>ADMIN</option></select>
           </label>
-          <label class="span-3" id="newUserPasswordField">Senha inicial<input id="newUserPassword" type="password" autocomplete="new-password" required></label>
+          <label class="span-3" id="newUserPasswordField">Senha inicial<input id="newUserPassword" type="password" autocomplete="new-password" minlength="8" maxlength="72" required></label>
           <label class="span-2">Ativo
             <select id="newUserActive"><option value="true">Sim</option><option value="false">Nao</option></select>
           </label>
