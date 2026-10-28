@@ -985,6 +985,8 @@ async function supabaseListActiveCrmSellers() {
 }
 
 async function supabaseSaveBusinessClient(payload = {}) {
+  const discount = Number(payload.commercial_discount_percent ?? 0);
+  if (!Number.isFinite(discount) || discount < 0) throw new Error('Informe um desconto comercial valido.');
   const client = {
     codigo_sap_cliente: String(payload.codigo_sap_cliente || '').trim() || null,
     nome: String(payload.nome || '').trim(),
@@ -996,7 +998,7 @@ async function supabaseSaveBusinessClient(payload = {}) {
     cidade: String(payload.cidade || '').trim() || null,
     estado: String(payload.estado || '').trim().toUpperCase() || null,
     ativo: payload.ativo !== false,
-    commercial_discount_percent: Math.max(0, Number(payload.commercial_discount_percent || 0)),
+    commercial_discount_percent: discount,
     assigned_seller_id: String(payload.assigned_seller_id || '').trim() || null,
     observacoes: String(payload.observacoes || '').trim() || null
   };
@@ -1004,12 +1006,8 @@ async function supabaseSaveBusinessClient(payload = {}) {
   if (client.email && !isValidEmail(client.email)) throw new Error('Informe um email valido para o cliente.');
   const record = payload.id ? Object.assign({ id: payload.id }, client) : client;
   const { data, error } = await supabaseClient
-    .from('clients')
-    .upsert(record, { onConflict: 'id' })
-    .select('id, codigo_sap_cliente, nome, nome_fantasia, cnpj, telefone, email, endereco, cidade, estado, ativo, commercial_discount_percent, assigned_seller_id, observacoes')
-    .single();
+    .rpc('save_business_client_scoped', { payload: record });
   if (error) throw error;
-  await supabaseLog('SALVAR_CLIENTE', 'clients', data.id, client);
   return data;
 }
 
@@ -1042,11 +1040,7 @@ async function supabaseSaveBusinessClientFromCadastro(cadastro = {}) {
 
 async function supabaseFindBusinessClient(field, value) {
   const { data, error } = await supabaseClient
-    .from('clients')
-    .select('id, commercial_discount_percent, assigned_seller_id')
-    .eq(field, value)
-    .limit(1)
-    .maybeSingle();
+    .rpc('find_business_client_scoped', { lookup_field: field, lookup_value: value });
   if (error) throw error;
   return data || null;
 }
