@@ -141,3 +141,29 @@ test('SQL queue fails closed, has no direct client grants and updates only techn
   assert.doesNotMatch(browserHistory, /claim_token/);
   assert.match(read('app.html'), /data_sync\.js\?v=20261021-local-catalog-sync-1/);
 });
+
+test('image extension case fix keeps exact origin and rejects unsupported URLs', () => {
+  const sql = read('supabase/migrations/123_installed_catalog_image_extensions.sql');
+  const pattern = sql.match(/new_pattern text := '([^']+)'/)[1];
+  const allowed = new RegExp(pattern);
+  const origin = 'https://pub-1c42f71f3a974244953a13b83a68b545.r2.dev/';
+  for (const extension of ['png', 'PNG', 'PnG', 'jpg', 'JPG', 'jpeg', 'JpEg', 'webp', 'WEBP']) {
+    assert.equal(allowed.test(origin + 'folder/test.' + extension), true);
+  }
+  for (const url of ['https://example.invalid/test.PNG', origin.replace('https:', 'http:') + 'test.PNG',
+    origin.replace('.r2.dev/', '.r2.dev.evil.invalid/') + 'test.PNG',
+    origin + 'test.PNG?x=1', origin + 'test.PNG#x', origin + 'test.svg',
+    origin + 'test.png.exe', origin + 'test.png/']) assert.equal(allowed.test(url), false);
+});
+
+test('image extension migration preserves RPC metadata and performs no table mutations or grants', () => {
+  const sql = read('supabase/migrations/123_installed_catalog_image_extensions.sql');
+  assert.match(sql, /finish_installed_catalog_sync\(uuid,uuid,jsonb\)/);
+  assert.match(sql, /CATALOG_IMAGE_VALIDATOR_UNEXPECTED/);
+  assert.match(sql, /execute replace\(definition, old_pattern, new_pattern\)/);
+  assert.match(sql, /metadata_after is distinct from metadata_before/);
+  assert.match(sql, /source_after is distinct from replace\(source_before, old_pattern, new_pattern\)/);
+  assert.doesNotMatch(sql, /\b(insert into|update public\.|delete from|grant |revoke |drop )/i);
+  assert.match(sql, /^begin;/);
+  assert.match(sql, /commit;\s*$/);
+});

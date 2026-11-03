@@ -106,6 +106,14 @@ Nao habilitar em producao sem revisao e autorizacao especifica.
 
 ## Catalogo instalado como pacote Windows
 
+A migration 123 compatibiliza extensoes de imagem em maiusculas ou mistas
+(`.PNG`, `.JpEg`) com o leitor local. Preserva a URL original, o dominio HTTPS
+exato, a proibicao de query/fragment e os formatos png/jpg/jpeg/webp. Nenhum
+arquivo do catalogo instalado e renomeado. A migration aborta se o validador
+esperado nao for encontrado ou se houver mudanca no contrato ou privilegios da
+RPC; nao modifica produtos existentes. A regressao SQL 123 exige banco isolado
+`crm_catalog123_test`, com fixtures ficticias, nunca producao.
+
 Quando o catalogo estiver instalado pela Microsoft Store, configure
 `catalogPackageFamily` como
 `BrunoRImbanoJunior.CatlogoYokomitsu_m47cmv7cfchvj`.
