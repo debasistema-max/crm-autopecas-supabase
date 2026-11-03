@@ -17,21 +17,39 @@
   min-width: 44px;
 }
 
-.commercial-tax-totals {
+.sap-totals > .commercial-tax-totals {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+
+.sap-totals > .commercial-tax-totals > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: baseline;
+  gap: 4px 16px;
   min-width: 0;
 }
 
-.commercial-tax-totals > div {
-  display: flex;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 4px 16px;
+.commercial-tax-totals span {
+  overflow-wrap: anywhere;
 }
 
 .commercial-tax-totals strong {
   white-space: nowrap;
+}
+
+.commercial-tax-totals > .commercial-grand-total {
+  padding-top: 10px;
+  border-top: 1px solid var(--line, #d4dce5);
+  color: var(--text, #17212b);
+}
+
+.commercial-tax-totals > .commercial-grand-total strong {
+  color: var(--text, #17212b);
+  font-size: 16px;
 }
 
 @media (max-width: 980px) {
